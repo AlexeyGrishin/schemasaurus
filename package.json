@@ -1,0 +1,19 @@
+{
+  "name": "schemasaurus",
+  "version": "0.5.0",
+  "description": "JSON schema iterator, validator, renderer, and so on",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "keywords": [
+    "json-schema",
+    "json",
+    "validation"
+  ],
+  "author": "Alexey Grishin",
+  "license": "ISC",
+  "devDependencies": {
+    "expect.js": "^0.3.1"
+  }
+}
