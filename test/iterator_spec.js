@@ -1,6 +1,6 @@
 var expect = require('expect.js');
 var Iterator = require('../src/iterator');
-require('../src/standardExtensions.js')();
+require('../src/standardExtensions.js')(Iterator);
 
 function t(s) {
     return function() { return s;}
@@ -16,6 +16,7 @@ describe("default iterator", function() {
 
     var visited = [];
     function visit(schema, object, ctx) {
+        if (!schema) return;
         var o = {};
         o[ctx.path().join(".") + (ctx.attribute ? ":" + ctx.attribute : "")] = object ? object.toString() : null;
         visited.push(o);
@@ -185,6 +186,7 @@ describe("default iterator", function() {
             }));
             var parents = {};
             it.iterate(function(schema, obj, ctx) {
+                if (!schema) return;
                 parents[schema.$$id] = ctx.parent() ? ctx.parent()[0].$$id : null;
             });
             expect(parents).to.eql({
@@ -194,28 +196,31 @@ describe("default iterator", function() {
         });
     });
 
-    describe("combining attributes", function() {
 
-        function firstLevelOnly(o) {
-            var fl = {};
-            for (var k in o) {
-                if (o.hasOwnProperty(k)) {
-                    fl[k] = typeof o[k] != 'object' ? o[k] : true;
-                }
+    function firstLevelOnly(o) {
+        var fl = {};
+        for (var k in o) {
+            if (o.hasOwnProperty(k)) {
+                fl[k] = typeof o[k] != 'object' ? o[k] : true;
             }
-            return fl;
         }
+        return fl;
+    }
 
-        function visitAlt(schema, object, ctx) {
-            var o = {};
-            o[ctx.path().join(".") + (ctx.attribute ? ":" + ctx.attribute : "")] = firstLevelOnly(schema);
-            visited.push(o);
-        }
+    function visitAlt(schema, object, ctx) {
+        if (!schema) return;
+        var o = {};
+        o[ctx.path().join(".") + (ctx.attribute ? ":" + ctx.attribute : "")] = firstLevelOnly(schema);
+        visited.push(o);
+    }
 
-        function iterateAlt(schema) {
-            new Iterator(schema).iterate(visitAlt);
-            return visited;
-        }
+    function iterateAlt(schema) {
+        new Iterator(schema).iterate(visitAlt);
+        return visited;
+    }
+
+
+    describe("combining attributes", function() {
 
         it("shall iterate all alternatives", function() {
             expect(iterateAlt(SCHEMA({
@@ -247,8 +252,9 @@ describe("default iterator", function() {
                     {"": {type: "string", maxLength: 20}},
                     {":end-alternative": {type: "string", allOf: true}}
                 ])
-        })
-    })
+        });
+    });
+
 
 
 });

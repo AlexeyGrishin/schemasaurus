@@ -1,6 +1,4 @@
-var Iterator = require('./iterator');
-
-module.exports = function() {
+module.exports = function(Iterator) {
 
     Iterator.meta.type("object", function (schemaNode, objectNode, c) {
         for (var k in schemaNode.properties) {
@@ -47,11 +45,4 @@ module.exports = function() {
     Iterator.meta.attr("anyOf", composing("anyOf"));
     Iterator.meta.attr("oneOf", composing("oneOf"));
     Iterator.meta.attr("allOf", composing("allOf"));
-
-    Iterator.meta.attr("not", function(schemaNode, objectNode, c) {
-        var not = schemaNode.not;
-        c.report("start-not");
-        c.visit(not, objectNode);
-        c.report("end-not");
-    });
 };

@@ -4,23 +4,26 @@ function clone(o) {
     return JSON.parse(JSON.stringify(o));
 }
 
-function Iterator(schema) {
+function Iterator(schema, callbackConv) {
     if (!schema) throw new Error("schema shall not be null");
     if (typeof schema !== 'object') throw new Error("schema shall be an object");
     if (!Object.keys(attrs).concat(["type"]).some(function(attr) { return schema[attr]; })) {
         schema = {type: "object", properties: schema};
     }
     this.schema = clone(schema);
+    this.callbackConv = callbackConv || function(c) { return c; };
 }
 
 var types = {};
 var attrs = {};
 
+
 Iterator.prototype.iterate = function(object, callback) {
-    if (typeof object === 'function') {
+    if (typeof callback === 'undefined') {
         callback = object;
         object = undefined;
     }
+    callback = this.callbackConv(callback);
     if (typeof callback === "undefined") throw new Error("Callback shall be specified");
 
     var path = [], stack = [];
@@ -68,6 +71,7 @@ Iterator.prototype.iterate = function(object, callback) {
     }
 
     c.visit(this.schema, object);
+    return callback();
 
 };
 
@@ -77,9 +81,6 @@ Iterator.meta = {
     },
     attr: function(attr, visitor) {
         attrs[attr] = visitor;
-    },
-    match: function() {
-
     },
     plugin: function() {
 
