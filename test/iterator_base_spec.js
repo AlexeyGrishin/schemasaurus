@@ -1,5 +1,5 @@
 var expect = require('expect.js');
-var Iterator = require('../src/iterator');
+var Iterator = require('../src/iterator_base');
 require('../src/standardExtensions.js')(Iterator);
 
 function t(s) {
