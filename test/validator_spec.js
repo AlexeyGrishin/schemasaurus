@@ -109,7 +109,7 @@ describe("validator", function() {
                     .validate("12", FailWith("type.string.minLength"))
             });
             it("shall check max length", function() {
-                schema({type: "string", maxLength: 3})
+                schema({maxLength: 3})
                     .validate("123", Ok)
                     .validate("12", Ok)
                     .validate("1234", FailWith("type.string.maxLength"))
@@ -160,4 +160,5 @@ describe("validator", function() {
         });
     })
 
+    //https://github.com/json-schema/JSON-Schema-Test-Suite
 });

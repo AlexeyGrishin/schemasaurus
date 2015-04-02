@@ -18,7 +18,7 @@ function countCallsAndNext() { return countCalls(true); }
 describe("selector", function() {
 
     function iterateAndSaveNodes(schema, selectors) {
-        var it = new Iterator(schema, selector);
+        var it = new Iterator({properties: schema, type: "object"}, selector);
         var expSelectors = {};
         var result = {};
         for (var k in selectors) {
@@ -133,7 +133,7 @@ describe("selector", function() {
     });
 
     it("shall call selector factory if function provided instead of object", function() {
-        var it = new Iterator({node1: {a: 1}}, selector);
+        var it = new Iterator({properties: {node1: {a: 1}}, type: "object"}, selector);
         var called = false;
         it.iterate(function() {
             return {"[a]": function() { called = true;}}

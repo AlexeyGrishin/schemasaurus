@@ -7,7 +7,7 @@ function selectorToCondition(selector) {
         if (attr[0] == '^') {
             return "!(" + genAttrCond(attr.substring(1), value) + ")";
         }
-        return value ? ("schema." + attr + " === " + JSON.stringify(value)) : "typeof schema." + attr + " !== 'undefined'";
+        return value !== null ? ("schema." + attr + " === " + JSON.stringify(value)) : "typeof schema." + attr + " !== 'undefined'";
     }
     function genModifierCond(mod) {
         return mod ? ("ctx.attribute === " + JSON.stringify(mod)) : "typeof ctx.attribute === 'undefined'";

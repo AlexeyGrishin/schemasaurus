@@ -10,9 +10,9 @@ function clone(o) {
 function Iterator(schema, callbackConv) {
     if (!schema) throw new Error("schema shall not be null");
     if (typeof schema !== 'object') throw new Error("schema shall be an object");
-    if (!Object.keys(attrs).concat(["type"]).some(function(attr) { return schema[attr]; })) {
+    /*if (!Object.keys(attrs).concat(["type"]).some(function(attr) { return schema[attr]; })) {
         schema = {type: "object", properties: schema};
-    }
+    }*/
     this.schema = clone(schema);
     this.callbackConv = callbackConv || function(c) { return c; };
 }
@@ -45,6 +45,12 @@ Iterator.prototype.iterate = function(object, callback) {
             for (var attr in attrs) {
                 if (attrs.hasOwnProperty(attr) && schemaNode.hasOwnProperty(attr)) {
                     customVisitor = attrs[attr];
+                    if (customVisitor.length === 1) {
+                        //jsut helper, execute and continue
+                        customVisitor(schemaNode);
+                        customVisitor = null;
+                        continue;
+                    }
                     break;
                 }
             }

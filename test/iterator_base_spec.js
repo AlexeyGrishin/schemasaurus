@@ -7,7 +7,7 @@ function t(s) {
 }
 
 function OBJECT(name, o) {
-    o.toString = t(name);
+    Object.defineProperty(o, "toString", {value: t(name), enumerable: false});
     return o;
 }
 function SCHEMA(s) { return s;}
@@ -52,6 +52,34 @@ describe("default iterator", function() {
             {"name": "ok"},
             {":end": "obj"}
         ])
+    });
+
+    it("shall not visit unknown properties if additionalProperties is not defined", function() {
+        expect(iterate(
+            SCHEMA({
+                type: "object",
+                properties: {}
+            }),
+            OBJECT("obj", {test: 1})
+        )).to.eql([
+                {"": "obj"},
+                {":end": "obj"}
+            ])
+    });
+
+    it("shall visit unknown properties if additionalProperties is an object", function() {
+        expect(iterate(
+            SCHEMA({
+                type: "object",
+                properties: {},
+                additionalProperties: {type: "integer"}
+            }),
+            OBJECT("obj", {test: 1})
+        )).to.eql([
+                {"": "obj"},
+                {"test": 1},
+                {":end": "obj"}
+            ])
     });
 
     it("shall visit nested object properties", function() {
