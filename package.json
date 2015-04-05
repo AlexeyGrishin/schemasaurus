@@ -4,8 +4,8 @@
   "description": "JSON schema iterator, validator, renderer, and so on",
   "main": "index.js",
   "scripts": {
-    "test": "istanbul cover node_modules/mocha/bin/_mocha && start coverage\\lcov-report\\index.html",
-    "justtest": "istanbul cover node_modules/mocha/bin/_mocha",
+    "opencover": "istanbul cover node_modules/mocha/bin/_mocha && start coverage\\lcov-report\\index.html",
+    "test": "istanbul cover node_modules/mocha/bin/_mocha",
     "build": "browserify src/iterator.js -s schemasaurus -o ./schemasaurus.js && uglifyjs ./schemasaurus.js -m > ./schemasaurus.min.js"
   },
   "keywords": [
