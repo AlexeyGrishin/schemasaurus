@@ -1,40 +1,33 @@
 var base = require('./iterator_base');
 var ext = require('./standardExtensions');
-var validator = require('./v4validator');
-var selector = require('./selector');
+var createValidator = require('./v4validator');
+var createSelector = require('./selector');
 
-function Iterator() {
 
+function Iterator(iterator, opts) {
+  var it = new base(iterator, opts);
+  ext(it);
+  var fn = it.iterate.bind(it);
+  fn.schema = function(s) {
+    it.schema(s);
+    return fn;
+  };
+  return fn;
 }
 
-function Validator(schema, options) {
+function Validator(options) {
+  return Selector(createValidator(options), options);
+}
 
+function Selector(selector, options) {
+  return Iterator(createSelector(selector), options);
 }
 
 module.exports = {
-    Iterator: Iterator,
-    Validator: Validator
+  Iterator: Iterator,
+  Selector: Selector,
+  Validator: Validator
 };
 
-
-/*
-usage:
-
-  it = new Iterator(schema)
-  it.iterate(obj, cb);
-
-  //or
-
-  it.setCallback(...)
-  it = new Iterator(schema, options = {callback: ..., useSelectors: true/false, ...);
-
-
-  v = new Validator(schema, options);    --> new Iterator(schema, {callback: validatorSelectors(..)})
-  v.validate(obj)
-
-  Iterator.create(schema, options)
-  Iterator.cb.validatorSelector(options)
-  Iterator.createValidator(schema);
-
-
- */
+Validator.meta = createValidator.meta;
+Iterator.meta = base.meta;

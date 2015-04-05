@@ -1,9 +1,6 @@
 var fs = require('fs');
 var expect = require('expect.js');
-var Iterator = require('../src/iterator_base');
-require('../src/standardExtensions.js')(Iterator);
-var Selector = require('../src/selector');
-var Validator = require('../src/v4validator');
+var Validator = require('../src/iterator').Validator;
 var path = require('path');
 
 var ignored = require('./ignored.json');
@@ -32,11 +29,10 @@ describe("Official json schema tests suite", function() {
     suite.forEach(function(s) {
         describe(s.description + " [" + s.file + "]", function() {
             if (isIgnored(s.description)) return console.warn("  [IGNORED] " + s.description + ": *");
-            var iter = new Iterator(s.schema, Selector);
             s.tests.forEach(function(t) {
                 if (isIgnored(t.description)) return console.warn("  [IGNORED] " + s.description + ": " + t.description);
                 it(t.description, function() {
-                    var r = iter.iterate(t.data, Validator);
+                    var r = Validator().schema(s.schema)(t.data);
                     expect(r).to.eql(t.valid ? {valid: t.valid, errors: []} : {valid: t.valid, errors: r.errors});
                 })
             });

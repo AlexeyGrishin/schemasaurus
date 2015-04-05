@@ -17,146 +17,310 @@ function messages(gettext) {
         "type.object": gettext("shall be object"),
         "type.object.required": gettext("is required"),
         "type.object.additionalProperties": gettext("shall not have additional properties"),
+        "type.object.minProperties": gettext("shall have at least %d properties"),
+        "type.object.maxProperties": gettext("shall have no more than %d properties"),
         "type.array": gettext("shall be array"),
-        "required": gettext("is required")
+        "type.array.additionalItems": gettext("shall not have additional items"),
+        "type.array.minItems": gettext("shall have at least %d items"),
+        "type.array.maxItems": gettext("shall have no more %d items"),
+        "type.array.uniqueItems": gettext("shall have unique items"),
+        "type.enum": gettext("shall be one of values %s"),
+        "required": gettext("is required"),
+        "dependency": gettext("does not meet additional requirements for %s"),
+        "not": gettext("does not meet 'not' requirement"),
+        "oneOf": gettext("does not meet exactly one requirement"),
+        "oneOf.zero": gettext("does not meet any requirement"),
+        "allOf": gettext("does not meet all requirements"),
+        "anyOf": gettext("does not meet any requirement")
     }
 }
 
 var formats = {};
 
-module.exports = function(gettext_or_msg) {
-    if (typeof gettext_or_msg === 'undefined') gettext_or_msg = function(m) { return m;};
-    var msgs = typeof gettext_or_msg === 'object' ? gettext_or_msg : messages(gettext_or_msg);
+function isObject(o) {
+    return typeof o === 'object' && !Array.isArray(o) && o !== null;
+}
 
+module.exports = function(options) {
+    if (typeof options === 'undefined') options = {} ;
+    var msgs = options.messages || messages(options.gettext || function(m) { return m;});
 
-    var errors = [];
-
-    function error(code, ctx, arg, subpath) {
-        errors.push({
-            code: code,
-            message: msgs[code] || arg || (function() {throw new Error("There is no message registered for error '" + code + "'")}()),
-            value: ctx.value(),
-            arg: arg,
-            path: ctx.path().join(".").replace(/\.\[/g, "[") + (subpath ? "." + subpath : "")
-        });
-    }
-
-    function errorIf(condition) {
-        if (condition) error.apply(null, [].slice.call(arguments, 1));
-    }
-
-    return {
-        /*"[required=true]": function(schema, object, ctx, next) {
-            if (typeof object === 'undefined' || object === null) {
-                return error("required", ctx);
-            }
-            next();
-        },
-        "[^required]": function(schema, object, ctx, next) {
-            if (typeof object === 'undefined' || object === null) {
-                //thats ok
-                return;
-            }
-            next();
-        },*/
-        "[type]": function(schema, object, ctx, next) {
-            var types = Array.isArray(schema.type) ? schema.type : [schema.type];
-            for (var i = 0; i < types.length; i++) {
-                switch (types[i]) {
-                    case 'null':
-                        if (object === null) return next();
-                        break;
-                    case 'string':
-                        if (typeof object === 'string') return next();
-                        break;
-                    case 'integer':
-                        if (typeof object === 'number' && object%1===0) return next();
-                        break;
-                    case 'number':
-                        if (typeof object === 'number') return next();
-                        break;
-                    case 'boolean':
-                        if (typeof object === 'boolean') return next();
-                        break;
-                    case 'array':
-                        if (Array.isArray(object)) return next();
-                        break;
-                    case 'object':
-                        if (typeof object === 'object' && !Array.isArray(object) && object !== null) return next();
-                }
-            }
-            types.forEach(function(type) {
-                error("type." + type, ctx);
-            })
-        },
-
-        //////////////// string
-
-        "[maxLength]": function(schema, object, ctx, next) {
-            if (typeof object !== 'string') return next();
-            errorIf(object.length > schema.maxLength, "type.string.maxLength", ctx, schema.maxLength);
-            next();
-        },
-        "[minLength]": function(schema, object, ctx, next) {
-            if (typeof object !== 'string') return next();
-            errorIf(object.length < schema.minLength, "type.string.minLength", ctx, schema.minLength);
-            next();
-        },
-        "[pattern]": function(schema, object, ctx, next) {
-            if (typeof object !== 'string') return error("type.string", ctx);
-            errorIf(!object.match(schema.pattern), "type.string.pattern", ctx, schema.pattern);
-            next();
-        },
-        "[type=string][format]": function(schema, object, ctx) {
-            var fmt = formats[schema.format];
-            if (!fmt) throw new Error("Unknown format '" + schema.format + "'. Did you forget to register it?");
-            errorIf(!(fmt.regexp instanceof RegExp ? fmt.regexp.test(object) : fmt.test(object, schema)), "type.string.format." + fmt.name, ctx, fmt.message);
-        },
-        "[type=string][^format]": function() {/*stop*/},
-
-        //////////////// object
-
-        "[properties]": function(schema, object, ctx, next) {
-            schema.$keys = Object.keys(schema.properties);
-            var required = (schema.required || []).concat(schema.$keys.filter(function(key) {
-                return schema.properties[key].required === true;
-            }));
-            for (var i = 0; i < required.length; i++) {
-                errorIf(!object.hasOwnProperty(required[i]), "type.object.required", ctx, null, required[i]);
-            }
-            next();
-        },
-
-        "[additionalProperties=false]": function(schema, object, ctx, next) {
-            var schemaKeys = schema.$keys || [];
-            for (var k in object) {
-                if (object.hasOwnProperty(k)) {
-                    errorIf(schemaKeys.indexOf(k) == -1, "type.object.additionalProperties", ctx);
-                }
-            }
-            next();
-        },
-
-        ///////////// integer
-
-        "[multipleOf]": function(schema, object, ctx, next) {
-            if(typeof object !== 'number') return next();
-            var dv = object / schema.multipleOf;
-            errorIf((dv|0) !== dv, "type.integer.multipleOf", ctx, schema.multipleOf);
-            next();
-        },
-        "[minimum]": function(schema, object, ctx, next) {
-            errorIf(schema.exclusiveMinimum ? object <= schema.minimum : object < schema.minimum, "type.number.minimum" + (schema.exclusiveMinimum ? ".exclusive" : ""), ctx, schema.minimum);
-            next();
-        },
-        "[maximum]": function(schema, object, ctx, next) {
-            errorIf(schema.exclusiveMaximum ? object >= schema.maximum : object > schema.maximum, "type.number.maximum" + (schema.exclusiveMaximum ? ".exclusive" : ""), ctx, schema.maximum);
-            next();
-        },
-        done: function() {
-            return {valid: errors.length == 0, errors: errors};
+    var formts = {};
+    if (options.formats) {
+        for (var i = 0; i < options.formats.length; i++) {
+            formts[options.formats[i].name] = options.formats[i];
         }
     }
+    formts.__proto__ = formats;
+
+    return function() {
+        var errors = [];
+
+        function error(code, ctx, arg, subpath) {
+            errors.push({
+                code: code,
+                message: msgs[code] || arg || (function() {throw new Error("There is no message registered for error '" + code + "'")}()),
+                value: ctx.value(),
+                arg: arg,
+                path: ctx.path().join(".").replace(/\.\[/g, "[") + (subpath ? "." + subpath : "")
+            });
+        }
+
+        function errorIf(condition) {
+            if (condition) error.apply(null, [].slice.call(arguments, 1));
+        }
+
+        function copyErrors(anotherErrors) {
+            errors.splice.apply(errors, [errors.length, 0].concat(anotherErrors));
+        }
+
+
+        function toComparable(o) {
+            return typeof o === 'object' ? JSON.stringify(o) : o;
+        }
+
+        return {
+            "[^required]": function(schema, object, ctx, next) {
+                var parent = ctx.parent().schema;
+                //TODO: here need to understand is parent object or not.
+                if (parent /*&& parent.type === 'object'*/ && (typeof object === 'undefined' || object === null)) {
+                    //thats ok
+                    return;
+                }
+                next();
+            },
+            "[type]": function(schema, object, ctx, next) {
+                var types = Array.isArray(schema.type) ? schema.type : [schema.type];
+                for (var i = 0; i < types.length; i++) {
+                    switch (types[i]) {
+                        case 'null':
+                            if (object === null) return next();
+                            break;
+                        case 'string':
+                            if (typeof object === 'string') return next();
+                            break;
+                        case 'integer':
+                            if (typeof object === 'number' && object%1===0) return next();
+                            break;
+                        case 'number':
+                            if (typeof object === 'number') return next();
+                            break;
+                        case 'boolean':
+                            if (typeof object === 'boolean') return next();
+                            break;
+                        case 'array':
+                            if (Array.isArray(object)) return next();
+                            break;
+                        case 'object':
+                            if (isObject(object)) return next();
+                    }
+                }
+                types.forEach(function(type) {
+                    error("type." + type, ctx);
+                })
+            },
+
+            //////////////// dependencies
+            "[dependencies]": function(schema, object, ctx, next) {
+                for (var prop in schema.dependencies) {
+                    if (schema.dependencies.hasOwnProperty(prop)) {
+                        var dep = schema.dependencies[prop];
+                        if (Array.isArray(dep)) {
+                            dep = {required: dep};
+                        }
+                        if (object.hasOwnProperty(prop)) {
+                            var res = ctx.visit(dep, object);
+                            if (!res.valid) {
+                                error("dependency", ctx, prop);
+                                copyErrors(res.errors);
+                            }
+                        }
+                    }
+                }
+                next();
+            },
+
+            //////////////// combining
+
+            "[allOf]": function(schema, object, ctx, next) {
+                ctx.visit(schema.allOf, object).forEach(function(res) {
+                    if (!res.valid) {
+                        error("allOf", ctx);
+                        copyErrors(res.errors);
+                    }
+                });
+                next();
+            },
+            "[anyOf]": function(schema, object, ctx, next) {
+                var allErrors = [];
+                var res = ctx.visit(schema.anyOf, object).some(function(res) {
+                    allErrors = allErrors.concat(res.errors);
+                    return res.valid;
+                });
+                if (!res) {
+                    error("anyOf", ctx);
+                    copyErrors(allErrors);
+                }
+                next();
+            },
+            "[oneOf]": function(schema, object, ctx, next) {
+                var count = 0;
+                var allErrors = [];
+                ctx.visit(schema.oneOf, object).forEach(function(res) {
+                    allErrors = allErrors.concat(res.errors);
+                    if (res.valid) count++;
+                });
+                if (count === 0) {
+                    error("oneOf.zero", ctx);
+                    copyErrors(allErrors);
+                }
+                else if (count != 1) {
+                    error("oneOf", ctx);
+                }
+                next();
+            },
+
+            "[not]": function(schema, object, ctx, next) {
+                var res = ctx.visit(schema.not, object);
+                if (res.valid) {
+                    error("not", ctx);
+                    //TODO: propagate "errors"
+                }
+                next();
+            },
+
+            //////////////// enum
+
+            "[enum]": function(schema, object, ctx, next) {
+                var val = toComparable(object),
+                    vals = schema.$$enum = schema.$$enum || schema.enum.map(toComparable);
+                errorIf(vals.indexOf(val) == -1, "type.enum", ctx, schema.enum);
+                next();
+            },
+
+            //////////////// string
+
+            "[maxLength]": function(schema, object, ctx, next) {
+                if (typeof object !== 'string') return next();
+                errorIf(object.length > schema.maxLength, "type.string.maxLength", ctx, schema.maxLength);
+                next();
+            },
+            "[minLength]": function(schema, object, ctx, next) {
+                if (typeof object !== 'string') return next();
+                errorIf(object.length < schema.minLength, "type.string.minLength", ctx, schema.minLength);
+                next();
+            },
+            "[pattern]": function(schema, object, ctx, next) {
+                if (typeof object !== 'string') return next();
+                errorIf(!object.match(schema.pattern), "type.string.pattern", ctx, schema.pattern);
+                next();
+            },
+            "[type=string][format]": function(schema, object, ctx) {
+                var fmt = formts[schema.format];
+                if (!fmt) throw new Error("Unknown format '" + schema.format + "'. Did you forget to register it?");
+                errorIf(!(fmt.regexp instanceof RegExp ? fmt.regexp.test(object) : fmt.test(object, schema)), "type.string.format." + fmt.name, ctx, fmt.message);
+            },
+            "[type=string][^format]": function() {/*stop*/},
+
+            //////////////// array
+
+            "[additionalItems=false]": function(schema, object, ctx, next) {
+                if (!Array.isArray(object)) return next();
+                errorIf(schema.items && object.length > schema.items.length, "type.array.additionalItems", ctx);
+                next();
+            },
+
+            "[minItems]": function(schema, object, ctx, next) {
+                if (!Array.isArray(object)) return next();
+                errorIf(object.length < schema.minItems, "type.array.minItems", ctx);
+                next();
+            },
+
+            "[maxItems]": function(schema, object, ctx, next) {
+                if (!Array.isArray(object)) return next();
+                errorIf(object.length > schema.maxItems, "type.array.maxItems", ctx);
+                next();
+            },
+
+            "[uniqueItems]":  function(schema, object, ctx, next) {
+                if (!Array.isArray(object)) return next();
+                var its = {};
+                for (var i = 0; i < object.length; i++) {
+                    var o = toComparable(object[i]);
+                    errorIf(its[o], "type.array.uniqueItems", ctx, object[i]);
+                    its[o] = true;
+                }
+                next();
+            },
+
+            //////////////// object
+
+            "[required][^properties]": function(schema, object, ctx, next) {
+                if (!isObject(object)) return next();
+                for (var i = 0; i < schema.required.length; i++) {
+                    errorIf(!object.hasOwnProperty(schema.required[i]), "type.object.required", ctx, null, schema.required[i]);
+                }
+                next();
+
+            },
+            "[properties]": function(schema, object, ctx, next) {
+                if (!isObject(object)) return next();
+                schema.$keys = Object.keys(schema.properties);
+                var required = (schema.required || []).concat(schema.$keys.filter(function(key) {
+                    return schema.properties[key].required === true;
+                }));
+                for (var i = 0; i < required.length; i++) {
+                    errorIf(!object.hasOwnProperty(required[i]), "type.object.required", ctx, null, required[i]);
+                }
+                next();
+            },
+
+            "[maxProperties]": function(schema, object, ctx, next) {
+                if (!isObject(object)) return next();
+                errorIf(Object.keys(object).length > schema.maxProperties, "type.object.maxProperties", ctx, schema.maxProperties) ;
+                next();
+            },
+
+            "[minProperties]": function(schema, object, ctx, next) {
+                if (!isObject(object)) return next();
+                errorIf(Object.keys(object).length < schema.minProperties, "type.object.minProperties", ctx, schema.minProperties);
+                next();
+            },
+
+            "[additionalProperties=false]": function(schema, object, ctx, next) {
+                if (!isObject(object)) return next();
+                var schemaKeys = schema.$keys || [];
+                for (var k in object) {
+                    if (object.hasOwnProperty(k)) {
+                        errorIf(schemaKeys.indexOf(k) == -1, "type.object.additionalProperties", ctx, k);
+                    }
+                }
+                next();
+            },
+
+            ///////////// integer
+
+            "[multipleOf]": function(schema, object, ctx, next) {
+                if(typeof object !== 'number') return next();
+                var dv = object / schema.multipleOf;
+                errorIf((dv|0) !== dv, "type.integer.multipleOf", ctx, schema.multipleOf);
+                next();
+            },
+            "[minimum]": function(schema, object, ctx, next) {
+                errorIf(schema.exclusiveMinimum ? object <= schema.minimum : object < schema.minimum, "type.number.minimum" + (schema.exclusiveMinimum ? ".exclusive" : ""), ctx, schema.minimum);
+                next();
+            },
+            "[maximum]": function(schema, object, ctx, next) {
+                errorIf(schema.exclusiveMaximum ? object >= schema.maximum : object > schema.maximum, "type.number.maximum" + (schema.exclusiveMaximum ? ".exclusive" : ""), ctx, schema.maximum);
+                next();
+            },
+            done: function() {
+                return {valid: errors.length == 0, errors: errors};
+            }
+        }
+
+    }
+
 
 };
 

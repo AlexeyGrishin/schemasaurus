@@ -1,6 +1,5 @@
 var expect = require('expect.js');
-var Iterator = require('../src/iterator_base');
-require('../src/standardExtensions.js')(Iterator);
+var Iterator = require('../src/iterator').Iterator;
 
 function t(s) {
     return function() { return s;}
@@ -23,7 +22,7 @@ describe("default iterator", function() {
     }
 
     function iterate(schema, object) {
-        new Iterator(schema).iterate(object, visit);
+        Iterator(visit).schema(schema)(object);
         return visited;
     }
 
@@ -125,6 +124,32 @@ describe("default iterator", function() {
             ])
     });
 
+    it("shall visit tuple items", function() {
+        expect(iterate(
+            SCHEMA({
+                type: "array",
+                items: [
+                    {type: "number"},
+                    {type: "string"},
+                    {type: "string"}
+                ]
+            }),
+            OBJECT("list", [10, "mice"])
+        )).to.eql([
+                {"": "list"},
+                {":start-item": "list"},
+                {"[0]": 10},
+                {":end-item": "list"},
+                {":start-item": "list"},
+                {"[1]": "mice"},
+                {":end-item": "list"},
+                {":start-item": "list"},
+                {"[2]": null},
+                {":end-item": "list"},
+                {":end": "list"}
+            ])
+    })
+
     it("shall not visit empty array", function() {
         expect(iterate(
             SCHEMA({
@@ -202,7 +227,11 @@ describe("default iterator", function() {
 
     describe("visitor", function() {
         it("shall be able to get parent schema/object", function() {
-            var it = new Iterator(SCHEMA({
+            var parents = {};
+            Iterator(function(schema, obj, ctx) {
+                if (!schema) return;
+                parents[schema.$$id] = ctx.parent().schema ? ctx.parent().schema.$$id : null;
+            }).schema({
                 type: "object",
                 $$id: "root",
                 properties: {
@@ -211,12 +240,7 @@ describe("default iterator", function() {
                         $$id: "child"
                     }
                 }
-            }));
-            var parents = {};
-            it.iterate(function(schema, obj, ctx) {
-                if (!schema) return;
-                parents[schema.$$id] = ctx.parent() ? ctx.parent()[0].$$id : null;
-            });
+            })();
             expect(parents).to.eql({
                 "child": "root",
                 "root": null
@@ -240,10 +264,13 @@ describe("default iterator", function() {
         var o = {};
         o[ctx.path().join(".") + (ctx.attribute ? ":" + ctx.attribute : "")] = firstLevelOnly(schema);
         visited.push(o);
+        ctx.visit(schema.oneOf, object);
+        ctx.visit(schema.allOf, object);
+        ctx.visit(schema.anyOf, object);
     }
 
     function iterateAlt(schema) {
-        new Iterator(schema).iterate(visitAlt);
+        new Iterator(visitAlt)(schema);
         return visited;
     }
 
@@ -252,35 +279,25 @@ describe("default iterator", function() {
 
         it("shall iterate all alternatives", function() {
             expect(iterateAlt(SCHEMA({
-                oneOf: [
-                    {type: "string"},
-                    {type: "number"}
-                ]
+                properties: {
+                    myProp: {
+                        oneOf: [
+                            {type: "string"},
+                            {type: "object", properties: {one: {type: "number"}}}
+                        ]
+                    }
+                }
             }))).to.eql([
-                    {":start-alternative": {oneOf: true}},
-                    {"": {type: "string"}},
-                    {":end-alternative": {oneOf: true}},
-                    {":start-alternative": {oneOf: true}},
-                    {"": {type: "number"}},
-                    {":end-alternative": {oneOf: true}}
+                    {"": {properties: true}},
+                    {"myProp": {oneOf: true}},
+                    {"myProp": {type: "string"}},
+                    {"myProp": {type: "object", properties: true}},
+                    {"myProp.one": {type: "number"}},
+                    {"myProp:end": {type: "object", properties: true}},
+                    {":end": {properties: true}}
                 ])
         });
-        it("shall combine alternative and parent", function() {
-            expect(iterateAlt(SCHEMA({
-                type: "string",
-                allOf: [
-                    {"minLength": 10},
-                    {"maxLength": 20}
-                ]
-            }))).to.eql([
-                    {":start-alternative": {type: "string", allOf: true}},
-                    {"": {type: "string", minLength: 10}},
-                    {":end-alternative": {type: "string", allOf: true}},
-                    {":start-alternative": {type: "string", allOf: true}},
-                    {"": {type: "string", maxLength: 20}},
-                    {":end-alternative": {type: "string", allOf: true}}
-                ])
-        });
+
     });
 
 

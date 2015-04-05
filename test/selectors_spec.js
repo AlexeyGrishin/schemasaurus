@@ -1,7 +1,5 @@
 var expect = require('expect.js');
-var Iterator = require('../src/iterator_base');
-require('../src/standardExtensions.js')(Iterator);
-var selector = require('../src/selector');
+var Selector = require('../src/iterator').Selector;
 
 function returnTrue() { return true; }
 function countCalls(callNext) {
@@ -18,7 +16,6 @@ function countCallsAndNext() { return countCalls(true); }
 describe("selector", function() {
 
     function iterateAndSaveNodes(schema, selectors) {
-        var it = new Iterator({properties: schema, type: "object"}, selector);
         var expSelectors = {};
         var result = {};
         for (var k in selectors) {
@@ -31,7 +28,7 @@ describe("selector", function() {
         expSelectors.done = function() {
             return result;
         };
-        return it.iterate(expSelectors);
+        return Selector(expSelectors).schema({properties: schema, type: "object"})();
     }
 
    it("shall detect nodes with specified attribute", function() {
@@ -133,18 +130,18 @@ describe("selector", function() {
     });
 
     it("shall call selector factory if function provided instead of object", function() {
-        var it = new Iterator({properties: {node1: {a: 1}}, type: "object"}, selector);
         var called = false;
-        it.iterate(function() {
+        var it = Selector(function() {
             return {"[a]": function() { called = true;}}
-        });
+        }).schema({properties: {node1: {a: 1}}, type: "object"});
+        it();
         expect(called).to.be.ok();
     });
     it("shall throw error if selector is invalid", function() {
         function trySelector(sel) { return function() {
             o = {};
             o[sel] = function() {};
-            return selector(o);
+            return Selector(o);
         }}
         expect(trySelector("[a")).to.throwError();
         expect(trySelector("a]")).to.throwError();

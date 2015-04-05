@@ -35,13 +35,19 @@ function selectorToCondition(selector) {
 }
 
 //[attr=value]*:modifier : function(schema, object, ctx, next)
-function selectorsToCallback(selectors) {
-    if (typeof selectors === 'function') {
-        selectors = selectors();
+function selectorsToCallback(selectorsCtor) {
+    var selectors = null;
+    if (typeof selectorsCtor !== 'function') {
+        selectors = selectorsCtor;
+        selectorsCtor = function() { return selectors; }
+    }
+    else {
+        selectors = selectorsCtor();
     }
 
-    var singleCond = "if (#1) { stop = true; this.fn[#2](schema, object, ctx, next); if (stop) return; };";
-    var head = "if (schema == null) {return this.fn.done ? this.fn.done() : null}; var stop; function next() { stop = false; };";
+    var singleCond = "if (#1) { stop = true; selectors[#2](schema, object, ctx, next); if (stop) return; };";
+    var head = "return function() { var selectors = selectorsCtor(); return function(schema, object, ctx) { if (schema == null) {return selectors.done ? selectors.done() : null}; var stop; function next() { stop = false; };";
+    var tail = "}};";
 
     var code = [head];
     for (var s in selectors) {
@@ -50,9 +56,10 @@ function selectorsToCallback(selectors) {
             code.push(singleCond.replace("#1", cond).replace("#2", "'" + s + "'"));
         }
     }
-    var func = Function("schema", "object", "ctx", code.join("\n"));
-    func.fn = selectors;
-    return func.bind(func);
+    code.push(tail);
+    var func = Function("selectorsCtor", code.join("\n"));
+    return func(selectorsCtor);
+
 }
 
 module.exports = selectorsToCallback;

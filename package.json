@@ -4,7 +4,9 @@
   "description": "JSON schema iterator, validator, renderer, and so on",
   "main": "index.js",
   "scripts": {
-    "test": "istanbul cover node_modules/mocha/bin/_mocha && start coverage\\lcov-report\\index.html"
+    "test": "istanbul cover node_modules/mocha/bin/_mocha && start coverage\\lcov-report\\index.html",
+    "justtest": "istanbul cover node_modules/mocha/bin/_mocha",
+    "build": "browserify src/iterator.js -s schemasaurus -o ./schemasaurus.js && uglifyjs ./schemasaurus.js -m > ./schemasaurus.min.js"
   },
   "keywords": [
     "json-schema",
@@ -14,8 +16,10 @@
   "author": "Alexey Grishin",
   "license": "ISC",
   "devDependencies": {
+    "browserify": "*",
     "expect.js": "^0.3.1",
     "istanbul": "^0.3.13",
-    "mocha": "^2.2.1"
+    "mocha": "^2.2.1",
+    "uglify-js": "^2.4.19"
   }
 }

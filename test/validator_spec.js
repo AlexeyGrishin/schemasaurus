@@ -1,8 +1,5 @@
 var expect = require('expect.js');
-var Iterator = require('../src/iterator_base');
-require('../src/standardExtensions.js')(Iterator);
-var Selector = require('../src/selector');
-var Validator = require('../src/v4validator');
+var Validator = require('../src/iterator').Validator;
 
 describe("validator", function() {
 
@@ -11,17 +8,23 @@ describe("validator", function() {
         return {valid: false, errors: [].slice.call(arguments)};
     }
 
-    function validate(schema, value, exp) {
-        var it = new Iterator(schema, Selector);
-        var res = it.iterate(value, Validator);
+    function validate(schema, value, exp, opts) {
+        var it = Validator(opts).schema(schema);
+        var res = it(value);
         res.errors = res.errors.map(function(e) { return e.code; });
         expect({value: value, validationResult: res}).to.eql({value: value, validationResult: exp});
     }
 
     function schema(schema) {
+        var o = undefined;
         return {
+            withFormat: function(fmt) {
+                o = o || {};
+                o.formats = [fmt];
+                return this;
+            },
             validate: function(value, exp) {
-                validate(schema, value, exp);
+                validate(schema, value, exp, o);
                 return this;
             }
         }
@@ -135,22 +138,20 @@ describe("validator", function() {
                 regexp: /(dog|cat|rat)/,
                 message: "shall be pet"
             });
-            Validator.meta.addFormat({
-                name: "strength",
-                test: function(v) { return v !== 'qwerty';},
-                message: "shall be stronger"
-            });
-
-            it("shall check format specified with regexp", function() {
+            it("shall check format specified with regexp globally", function() {
                 schema({type: "string", format: "pet"})
                     .validate("cat", Ok)
                     .validate("dog", Ok)
                     .validate("rat", Ok)
                     .validate("crow", FailWith("type.string.format.pet"))
             });
-            it("shall check format specified by function", function() {
+            it("shall check format specified by function locally", function() {
                 schema({type: "string", format: "strength"})
-                    .validate("qwerty", FailWith("type.string.format.strength"))
+                    .withFormat({
+                        name: "strength",
+                        test: function(v) { return v !== 'qwerty';},
+                        message: "shall be stronger"
+                    })                    .validate("qwerty", FailWith("type.string.format.strength"))
                     .validate("!K&$F", Ok)
             });
             it("shall throw error on unknown format", function() {
