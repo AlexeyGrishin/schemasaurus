@@ -6,7 +6,6 @@ function messages(gettext) {
         "type.string.minLength": gettext("shall have length at least %d"),
         "type.string.maxLength": gettext("shall have length no more than %d"),
         "type.string.pattern": gettext("shall match pattern %s"),
-        "type.string.format.email": gettext("is not a valid e-mail"),
         "type.integer": gettext("shall be an integer"),
         "type.integer.multipleOf": gettext("shall be multiple of %d"),
         "type.number": gettext("shall be a number"),
@@ -227,7 +226,7 @@ function doValidate(msgs, formts) {
             errorIf(!object.match(schema.pattern), "type.string.pattern", ctx, schema.pattern);
             next();
         },
-        "[type=string][format]": function (schema, object, ctx) {
+        "[format]": function (schema, object, ctx) {
             var fmt = formts[schema.format];
             if (!fmt) {
                 throw new Error("Unknown format '" + schema.format + "'. Did you forget to register it?");
@@ -385,5 +384,35 @@ module.exports.meta = {
     }
 };
 
-//TODO: hostname,ip,date-time,uri - look at http://spacetelescope.github.io/understanding-json-schema/reference/string.html
-module.exports.meta.addFormat({name: "email", regexp: /^[^@]+@[^@]+$/});
+module.exports.meta.addFormat({
+    name: "email",
+    regexp: /^[^@]+@[^@]+$/,
+    message: "shall be valid email"
+});
+module.exports.meta.addFormat({
+    name: "date-time",
+    regexp: /^\d{4}-(?:0[0-9]{1}|1[0-2]{1})-[0-9]{2}[tT ]\d{2}:\d{2}:\d{2}(\.\d+)?([zZ]|[+-]\d{2}:\d{2})$/,
+    message: "shall be valid date"
+});
+module.exports.meta.addFormat({
+    name: "ipv4",
+    regexp: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
+    message: "shall be valid ipv4 address"
+});
+module.exports.meta.addFormat({
+    name: "ipv6",
+    regexp: /^\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*$/,
+    message: "shall be valid ipv6 address"
+});
+module.exports.meta.addFormat({
+    name: "uri",
+    regexp:  /^[a-zA-Z][a-zA-Z0-9+-.]*:[^\s]*$/,
+    message: "shall be valid URI"
+});
+module.exports.meta.addFormat({
+    name: "hostname",
+    regexp:  /^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$/,
+    message: "shall be valid host name"
+});
+
+

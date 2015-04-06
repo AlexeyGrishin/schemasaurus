@@ -19,7 +19,9 @@ function loadSuite(dir) {
     return tests;
 }
 
-var suite = loadSuite(path.join(__dirname, 'json-schema-test-suit', 'tests', 'draft4'));
+var suite = loadSuite(path.join(__dirname, 'json-schema-test-suit', 'tests', 'draft4')).concat(
+    loadSuite(path.join(__dirname, 'json-schema-test-suit', 'tests', 'draft4', 'optional'))
+);
 
 function isIgnored(str) {
     return ignored.some(function(i) { return str.indexOf(i) != -1});
