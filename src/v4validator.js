@@ -73,7 +73,7 @@ function doValidate(msgs, formts) {
     return {
         "[^required]": function (schema, object, ctx, next) {
             var parent = ctx.parent().schema;
-            if (parent && (object === undefined || object === null)) {
+            if (parent && (object === undefined)) {
                 //thats ok
                 return;
             }
@@ -322,16 +322,12 @@ function doValidate(msgs, formts) {
             next();
         },
 
-        "[additionalProperties=false]": function (schema, object, ctx, next) {
-            if (!isObject(object)) {
-                return next();
-            }
-            var schemaKeys = schema.$keys || [], k;
-            for (k in object) {
-                if (object.hasOwnProperty(k)) {
-                    errorIf(schemaKeys.indexOf(k) === -1, "type.object.additionalProperties", ctx, k);
-                }
-            }
+        "[additionalAllowed=true]": function () {
+            /* just skip*/
+        },
+
+        "[additionalAllowed=false]": function (schema, object, ctx, next) {
+            error("type.object.additionalProperties", ctx);
             next();
         },
 

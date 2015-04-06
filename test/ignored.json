@@ -1,8 +1,6 @@
 [
   "Unicode",
-  "patternProperties",
   "definition",
   "remote ref",
-  "change resolution",
-  "regexes are not anchored by default and are case sensitive"
+  "change resolution"
 ]

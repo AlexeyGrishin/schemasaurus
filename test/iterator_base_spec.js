@@ -53,7 +53,7 @@ describe("default iterator", function() {
         ])
     });
 
-    it("shall not visit unknown properties if additionalProperties is not defined", function() {
+    it("shall visit unknown properties if additionalProperties is not defined", function() {
         expect(iterate(
             SCHEMA({
                 type: "object",
@@ -62,6 +62,7 @@ describe("default iterator", function() {
             OBJECT("obj", {test: 1})
         )).to.eql([
                 {"": "obj"},
+                {"test": '1'},
                 {":end": "obj"}
             ])
     });

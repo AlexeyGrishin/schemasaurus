@@ -3,31 +3,57 @@ module.exports = function (Iterator) {
 
     //xTODO: probably need to check objectNode type here, so if it is not object - do not go deep. or it shall be ruled by options
     Iterator.meta.type("object", function (schemaNode, objectNode, c) {
-        var k;
+        var k, visitedProperties = {}, i, pattern, len, additionalSchema;
         if (schemaNode.default && (Array.isArray(schemaNode.default) || typeof schemaNode.default !== 'object')) {
             delete schemaNode.default;
         }
+
         for (k in schemaNode.properties) {
             if (schemaNode.properties.hasOwnProperty(k)) {
                 c.visit(schemaNode.properties[k], objectNode ? objectNode[k] : undefined, k);
+                visitedProperties[k] = true;
             }
         }
-        if (objectNode && typeof schemaNode.additionalProperties === 'object') {
-            for (k in objectNode) {
-                if (objectNode.hasOwnProperty(k)) {
-                    if (schemaNode.properties && schemaNode.properties.hasOwnProperty(k)) {
-                        //noinspection JSLint
-                        continue;
+
+        if (objectNode && !Array.isArray(objectNode) && typeof objectNode === 'object') {
+            if (!schemaNode.$$patterns && typeof schemaNode.patternProperties === 'object') {
+                schemaNode.$$patterns = [];
+                for (k in schemaNode.patternProperties) {
+                    if (schemaNode.patternProperties.hasOwnProperty(k)) {
+                        schemaNode.$$patterns.push({re: new RegExp(k), sc: schemaNode.patternProperties[k]});
                     }
-                    c.visit(schemaNode.additionalProperties, objectNode ? objectNode[k] : undefined, k);
                 }
             }
+            additionalSchema = schemaNode.additionalProperties;
+            if (schemaNode.additionalProperties === false) {
+                additionalSchema = {additionalAllowed: false};
+            } else if (typeof schemaNode.additionalProperties !== 'object') {
+                additionalSchema = {additionalAllowed: true};
+            }
+            for (k in objectNode) {
+                if (objectNode.hasOwnProperty(k)) {
+                    len = schemaNode.$$patterns ? schemaNode.$$patterns.length : 0;
+                    for (i = 0; i < len; i = i + 1) {
+                        pattern = schemaNode.$$patterns[i];
+                        if (pattern.re.test(k)) {
+                            c.visit(pattern.sc, objectNode[k], k);
+                            visitedProperties[k] = true;
+                        }
+                    }
+                    if (!visitedProperties[k]) {
+                        c.visit(additionalSchema, objectNode[k], k);
+                    }
+                }
+            }
+
         }
         c.report("end");
     });
 
     Iterator.meta.attr("properties", "object");
     Iterator.meta.attr("additionalProperties", "object");
+    Iterator.meta.attr("patternProperties", "object");
+
 
     Iterator.meta.type("array", function (schemaNode, objectNode, c) {
         var items = schemaNode.items || {}, i;
