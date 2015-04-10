@@ -116,10 +116,10 @@ describe("default iterator", function() {
         )).to.eql([
                 {"": "list"},
                 {":start-item": "list"},
-                {"[0]": "1"},
+                {"0": "1"},
                 {":end-item": "list"},
                 {":start-item": "list"},
-                {"[1]": "2"},
+                {"1": "2"},
                 {":end-item": "list"},
                 {":end": "list"}
             ])
@@ -139,13 +139,13 @@ describe("default iterator", function() {
         )).to.eql([
                 {"": "list"},
                 {":start-item": "list"},
-                {"[0]": 10},
+                {"0": 10},
                 {":end-item": "list"},
                 {":start-item": "list"},
-                {"[1]": "mice"},
+                {"1": "mice"},
                 {":end-item": "list"},
                 {":start-item": "list"},
-                {"[2]": null},
+                {"2": null},
                 {":end-item": "list"},
                 {":end": "list"}
             ])

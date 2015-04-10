@@ -1,4 +1,27 @@
 "use strict";
+
+/*
+
+compile schema to set of commands --> code
+[
+  {schema: {}, object: null, prop: "firstname"},
+  {schema: {}, object: null, prop: "lastname"},
+  {schema: {}, object: null, prop: "medical_experience", assign: "a1"},
+  {schema: {}, object: "a1", prop: "areas", assign: "a2"},
+  {schema: {}, object: "a2", prop: {index: true}, attr: "item-start", assign: "a3'},
+  {schema: {}, object: "a3", prop: "name"},
+  {schema: {}, object: "a2", prop: {index: true}, attr: "item-start"},
+  {schema: {}, object: "a2", prop: {pattern: "S_"}},
+  {schema: {}, object: "a2", prop: {other: true}},
+  {schema: {}, object: "a2", attr: "end"},
+  {schema: {}, object: "a1", attr: "end"},
+
+
+при этом на каждом шаге вызывается callback, в случае с селектором - еще и несколько их. можно запомнить вызванные коллбэки на каждом шаге, для каждого куска схемы
+
+ */
+
+
 module.exports = function (Iterator) {
 
     //xTODO: probably need to check objectNode type here, so if it is not object - do not go deep. or it shall be ruled by options
@@ -30,9 +53,9 @@ module.exports = function (Iterator) {
             } else if (typeof schemaNode.additionalProperties !== 'object') {
                 additionalSchema = {additionalAllowed: true};
             }
+            len = schemaNode.$$patterns ? schemaNode.$$patterns.length : 0;
             for (k in objectNode) {
                 if (objectNode.hasOwnProperty(k)) {
-                    len = schemaNode.$$patterns ? schemaNode.$$patterns.length : 0;
                     for (i = 0; i < len; i = i + 1) {
                         pattern = schemaNode.$$patterns[i];
                         if (pattern.re.test(k)) {
@@ -64,13 +87,13 @@ module.exports = function (Iterator) {
         if (Array.isArray(items)) {
             for (i = 0; i < schemaNode.items.length; i = i + 1) {
                 c.report("start-item");
-                c.visit(schemaNode.items[i], objectNode ? objectNode[i] : undefined, "[" + i + "]");
+                c.visit(schemaNode.items[i], objectNode ? objectNode[i] : undefined, i);
                 c.report("end-item");
             }
             if (typeof schemaNode.additionalItems === 'object') {
                 for (i = schemaNode.items.length; i < (objectNode ? objectNode.length : 0); i = i + 1) {
                     c.report("start-item");
-                    c.visit(schemaNode.additionalItems, objectNode ? objectNode[i] : undefined, "[" + i + "]");
+                    c.visit(schemaNode.additionalItems, objectNode ? objectNode[i] : undefined, i);
                     c.report("end-item");
                 }
             }
@@ -81,7 +104,7 @@ module.exports = function (Iterator) {
         } else {
             for (i = 0; i < (objectNode ? objectNode.length : 0); i = i + 1) {
                 c.report("start-item");
-                c.visit(schemaNode.items || {}, objectNode[i], "[" + i + "]");
+                c.visit(schemaNode.items || {}, objectNode[i], i);
                 c.report("end-item");
             }
         }

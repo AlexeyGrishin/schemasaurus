@@ -47,7 +47,7 @@ function selectorToCondition(selector) {
 //[attr=value]*:modifier : function(schema, object, ctx, next)
 function selectorsToCallback(selectorsCtor) {
     var singleCond = "if (#1) { stop = true; selectors[#2](schema, object, ctx, next); if (stop) return; };",
-        head = "return function() { var selectors = selectorsCtor(); return function(schema, object, ctx) { if (schema == null) {return selectors.done ? selectors.done() : null}; var stop; function next() { stop = false; };",
+        head = "return function(st, ot) { var selectors = selectorsCtor(st, ot); return function(schema, object, ctx) { if (schema == null) {return selectors.done ? selectors.done() : null}; var stop; function next() { stop = false; };",
         tail = "}};",
         code = [head],
         s,

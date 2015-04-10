@@ -3,6 +3,7 @@ var Base = require('./iterator_base');
 var ext = require('./standardExtensions');
 var createValidator = require('./v4validator');
 var createSelector = require('./selector');
+var createNormalizer = require('./normalizer');
 
 
 function Iterator(iterator, opts) {
@@ -25,10 +26,15 @@ function Selector(selector, options) {
     return Iterator(createSelector(selector), options);
 }
 
+function Normlizer(options) {
+    return Selector(createNormalizer, options);
+}
+
 module.exports = {
     Iterator: Iterator,
     Selector: Selector,
-    Validator: Validator
+    Validator: Validator,
+    Normalizer: Normlizer
 };
 
 Validator.meta = createValidator.meta;

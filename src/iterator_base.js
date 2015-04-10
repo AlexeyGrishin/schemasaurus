@@ -24,13 +24,14 @@ function IteratorBase(callbackCtor, options) {
     }
     switch (callbackCtor.length) {
     case 0:
+    case 2:
         break;
     case 3:
         var cb = callbackCtor;
         callbackCtor = function () { return cb; };
         break;
     default:
-        throw new Error("Callback constructor shall have no arguments");
+        throw new Error("Callback constructor shall have 0 or 2 arguments");
     }
     this._callbackCtor = callbackCtor;
     if (options && options.schema) {
@@ -57,6 +58,7 @@ IteratorBase.prototype.types = {};
 
 function isEmpty(o) { return o === undefined || o === null; }
 
+
 IteratorBase.prototype.iterate = function (schema, object) {
     if (this._schema) {
         object = schema;
@@ -68,6 +70,13 @@ IteratorBase.prototype.iterate = function (schema, object) {
         var ctx, callback, c;
         ctx = {
             path: function () { return path; },
+            property: function () { return path[path.length - 1]; },
+            replace: function (newObj) {
+                stack[1][1][path[path.length - 1]] = newObj;
+            },
+            remove: function () {
+                delete stack[1][1][path[path.length - 1]];
+            },
             attribute: undefined,
             value: function () { return stack[0][1]; },
             parent: function (n) {
@@ -88,7 +97,7 @@ IteratorBase.prototype.iterate = function (schema, object) {
 
             refbase: []
         };
-        callback = self._callbackCtor();
+        callback = self._callbackCtor(schemaNode, objectNode);
         if (callback === undefined) {
             throw new Error("Callback shall be specified");
         }
@@ -102,10 +111,7 @@ IteratorBase.prototype.iterate = function (schema, object) {
                     return;
                 }
                 Object.defineProperty(schemaNode, "$$visited", {value: true, configurable: true});
-                if (schemaNode.id) {
-                    ctx.refbase.push(schemaNode.id);
-                }
-                if (step) {
+                if (step !== undefined) {
                     path.push(step);
                 }
                 stack.unshift([schemaNode, objectNode]);
@@ -131,7 +137,7 @@ IteratorBase.prototype.iterate = function (schema, object) {
                     visitors[v](schemaNode, objectNode, c, nodeType);
                 }
                 stack.shift();
-                if (step) {
+                if (step !== undefined) {
                     path.pop();
                 }
                 if (schemaNode.id) {
