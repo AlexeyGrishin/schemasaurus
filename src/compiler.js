@@ -5,7 +5,8 @@ function clone(o) {
 
 function CurrentObject(path) {
     this.path = path ? path.slice() : [];
-    this.stack = [];
+    this.stack = new Array(100);
+    this.si = 0;
     this.parent = null;
     this.property = null;
     this.self = null;
@@ -19,7 +20,8 @@ CurrentObject.prototype = {
     },
     push: function (prop, parent, self) {
         this.path.push(prop);
-        this.stack.push([prop, parent, self]);
+        this.stack[this.si] = [prop, parent, self];
+        this.si++;
         this.property = prop;
         this.parent = parent;
         this.self = self;
@@ -35,12 +37,14 @@ CurrentObject.prototype = {
         return false;
     },
     pop: function () {
-        this.stack.pop();
+        this.si--;
         this.path.pop();
-        var last = this.stack[this.stack.length - 1];
-        this.parent = last ? last[0] : undefined;
-        this.property = last ? last[1] : undefined;
-        this.self = last ? last[2] : undefined;
+        var last = this.stack[this.si];
+        if (last) {
+            this.parent = last[0];
+            this.property = last[1];
+            this.self = last[2];
+        }
     }
 };
 var Context = CurrentObject;
@@ -150,13 +154,27 @@ function convertMatcher(expr, selector) {
 }
 
 function compile(userSchema, selectorCtor, options, path) {
-
+    if (!selectorCtor || typeof selectorCtor !== 'function') {
+        throw new Error("selectorCtor shall be a function");
+    }
     options = options || {};
-    options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false: options.ignoreAdditionalItems;
+    options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false : options.ignoreAdditionalItems;
 
-    var code = [], schema = clone(userSchema), selector = selectorCtor(), matchFns, vars = [], fnin, fnout, matchers, labelCount = 0, label, schemas = [], ctx = new Context(path), schemaRoot = schema, innerFns = [];
+    var code = [],
+        schema = clone(userSchema),
+        selector = selectorCtor(),
+        vars = [],
+        fnin,
+        fnout,
+        matchers,
+        labelCount = 0,
+        label,
+        schemas = [],
+        ctx = new Context(path),
+        schemaRoot = schema,
+        innerFns = [];
 
-    matchFns = function (schema, att, cb) {
+    function matchFns(schema, att, cb) {
         var i, m, ma;
         if (!matchers) {
             matchers = [];
@@ -172,8 +190,7 @@ function compile(userSchema, selectorCtor, options, path) {
         for (i = 0; i < matchers.length; i = i + 1) {
             matchers[i](schema, att, cb);
         }
-    };
-
+    }
 
     function createVar() {
         var newvar = "i" + vars.length;
@@ -203,6 +220,7 @@ function compile(userSchema, selectorCtor, options, path) {
                     .replace(/^function\s*\([^)]*\)/, "")
                     .replace(/_/g, varName);
 
+                var needLabel = fnbody.indexOf('return') !== -1;
                 if (stopLabel) {
                     fnbody = fnbody.replace(/ctx.stop\(\)/, "break " + stopLabel);
                 }
@@ -214,7 +232,7 @@ function compile(userSchema, selectorCtor, options, path) {
                         fnbody = fnbody.replace(new RegExp(k, "g"), JSON.stringify(fn[k]));
                     }
                 }
-                code = code.concat((label + ":{" + fnbody + "}").split(/[\n\r]+/));
+                code = code.concat((needLabel ? (label + ":{" + fnbody + "}") : fnbody).split(/[\n\r]+/));
             }
         } else if (useinner) {
             schemas.push(schema);
@@ -382,37 +400,22 @@ function compile(userSchema, selectorCtor, options, path) {
     var fnbody = prettifyCode(code).map(function (line) {
         return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
     }).join("\n");
-    fnbody = ["var ctx = new CurrentObject(path), nil = undefined, schemaOnly = val === undefined"].concat(vars).join(",") + ";" + fnbody;
+    fnbody = ["var self; selector._f = function(val) { var nil = undefined, schemaOnly = val === undefined"]
+        .concat(vars).join(",") + ";\nctx.self=val;\n"
+        + fnbody
+        + "}; self = function (val) {" + (selector.reset ? "selector.reset();" : "") + "return selector._f(val) }; self.fn = selector._f; return self; ";
     try {
-        fnin = new Function("val", "schemas", "innerFns", "path", "CurrentObject", "self", fnbody);
+        fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
     }
     catch (e) {
         console.error(fnbody);
         throw e;
     }
+    var co = new CurrentObject(path);
+    var so = (selector.clone ? selector.clone() : selectorCtor());
+    fnin = fnout(so, schemas, innerFns, co);
 
-    function cloneSelector() {
-        if (selector.clone) {
-            return selector.clone();
-        }
-        else {
-            var newsel = selectorCtor();
-            for (var k in selector) {
-                if (selector.hasOwnProperty(k)) {
-                    newsel[k] = clone(selector[k]);
-                }
-            }
-            return newsel;
-        }
-
-    }
-
-    fnout = function (obj, sel) {
-        sel = sel || cloneSelector();
-        return fnin.call(sel, obj, schemas, innerFns, path, CurrentObject, fnout);
-    };
-    fnout.fn = fnin;
-    return fnout;
+    return fnin;
 }
 
 module.exports = compile;

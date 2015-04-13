@@ -1,25 +1,21 @@
 "use strict";
-/*
-  if (!isdefined(object.intProp) object.intProp = schema.intProp.default;
-  if (object.arrProp) {
-    //for each, etc.
-  }
- */
-module.exports = function (schemaTop, objectTop) {
-    return {
-        "[default]": function (schema, object, ctx, next) {
-            if (object === null || object === undefined) {
-                ctx.replace(schema.default);
-            }
-            next();
-        },
-        "[additionalAllowed]": function (schema, object, ctx, next) {
-            ctx.remove();
-            next();
-        },
-        "[type]": function (schema, object, ctx, next) {
-            if (object === null || object === undefined) return next();
-            switch (schema.type) {
+
+function Normalizer() {
+
+}
+
+Normalizer.prototype = {
+    "[default]": function (schema, object, ctx) {
+        if (object === null || object === undefined) {
+            ctx.replace(schema.default);
+        }
+    },
+    "[additionalProperty]": function (schema, object, ctx) {
+        ctx.remove();
+    },
+    "[type]": function (schema, object, ctx, next) {
+        if (object === null || object === undefined) return;
+        switch (schema.type) {
             case 'null':
                 ctx.replace(null);
                 break;
@@ -44,11 +40,12 @@ module.exports = function (schemaTop, objectTop) {
                 break;
             case 'object':
                 break;
-            }
-            next();
-        },
-        done: function () {
-            return objectTop;
         }
-    };
+    },
+    done: {inline: "return _"}
 };
+
+Normalizer.factory = function() {
+    return new Normalizer();
+};
+module.exports = Normalizer;

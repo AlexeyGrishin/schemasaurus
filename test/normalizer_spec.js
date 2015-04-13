@@ -1,10 +1,11 @@
 var expect = require('expect.js');
-var Normalizer = require('../src/iterator').Normalizer;
+var newNormalizer = require('../src/iterator').newNormalizer;
+
 
 describe('normalizer', function () {
 
     it("shall apply default values", function () {
-        var n = Normalizer().schema({
+        var n = newNormalizer({
             properties: {
                 intProp: {default: 10},
                 strProp: {default: "test"},
@@ -30,7 +31,7 @@ describe('normalizer', function () {
         });
     });
     it("shall remove additional items", function () {
-        var n = Normalizer().schema({
+        var n = newNormalizer({
             properties: {
                 oneProp: {type: "integer"}
             }
@@ -40,21 +41,25 @@ describe('normalizer', function () {
         expect(n({oneProp: 10, secondProp: 5})).to.eql(exp);
     });
     it("shall convert types", function () {
-        var n = Normalizer().schema({
+        var n = newNormalizer({
             properties: {
                 i: {type: "integer"},
                 n: {type: "number"},
                 s: {type: "string"},
                 b: {type: "boolean"},
-                a: {type: "array"}
+                a: {type: "array"},
+                u: {type: "null"},
+                o: {type: "object"}
             }
         });
-        expect(n({i: "10", n: ["22.2"], s: {toString: function() { return "1";}}, b: "false", a: 77})).to.eql({
+        expect(n({i: "10", n: ["22.2"], s: {toString: function() { return "1";}}, b: "false", a: 77, u: 33, o: -5})).to.eql({
             i: 10,
             n: 22.2,
             s: "1",
             b: false,
-            a: [77]
+            a: [77],
+            u: null,
+            o: -5
         });
 
     });

@@ -1,11 +1,8 @@
 var fs = require('fs');
 var expect = require('expect.js');
-var Validator = require('../src/iterator').Validator;
 var path = require('path');
 
-var V2 = require('../src/v4validator_compiled');
-var compile = require('../src/compiler');
-
+var newValidator = require('../src/iterator').newValidator;
 var ignored = require('./ignored.json');
 
 function loadSuite(dir) {
@@ -34,7 +31,7 @@ describe("Official json schema tests suite", function() {
     suite.forEach(function(s) {
         describe(s.description + " [" + s.file + "]", function() {
             if (isIgnored(s.description)) return console.warn("  [IGNORED] " + s.description + ": *");
-            var fn = compile(s.schema, V2.factory(), {noinline:true});
+            var fn = newValidator(s.schema, {noinline:true});
             s.tests.forEach(function(t) {
                 if (isIgnored(t.description)) return console.warn("  [IGNORED] " + s.description + ": " + t.description);
                 it(t.description, function() {

@@ -1,8 +1,5 @@
 var expect = require('expect.js');
-var Validator = require('../src/iterator').Validator;
-
-var V2 = require('../src/v4validator_compiled');
-var C2 = require('../src/compiler');
+var newValidator = require('../src/iterator').newValidator;
 
 describe("validator", function() {
 
@@ -11,10 +8,12 @@ describe("validator", function() {
         return {valid: false, errors: [].slice.call(arguments)};
     }
 
-    function validate(schema, value, exp, opts) {
-        var it = C2(schema, V2.factory(opts));
+    function validate(schema, value, exp, opts, whatToReturn) {
+        opts = opts || {};
+        opts.noinline = true;
+        var it = newValidator(schema, opts);
         var res = it(value);
-        res.errors = res.errors.map(function(e) { return e.code; });
+        res.errors = res.errors.map(function(e) { return e[whatToReturn || 'code']; });
         expect({value: value, validationResult: res}).to.eql({value: value, validationResult: exp});
     }
 
@@ -26,8 +25,16 @@ describe("validator", function() {
                 o.formats[fmt.name] = fmt;
                 return this;
             },
-            validate: function(value, exp) {
-                validate(schema, value, exp, o);
+            validate: function(value, exp, whatToReturn) {
+                validate(schema, value, exp, o, whatToReturn);
+                return this;
+            },
+            validatePath: function(value, exp) {
+                validate(schema, value, exp, o, "path");
+                return this;
+            },
+            validateValue: function(value, exp) {
+                validate(schema, value, exp, o, "value");
                 return this;
             }
         }
@@ -155,5 +162,62 @@ describe("validator", function() {
         });
     })
 
-    //https://github.com/json-schema/JSON-Schema-Test-Suite
+    describe("shall provide actual information in error message", function () {
+        it("for root values", function () {
+            var s = schema({type: "boolean"});
+            s.validatePath(10, FailWith(""))
+            s.validateValue(10, FailWith(10))
+        });
+        it("for nested objects", function () {
+            var s = schema({
+                type: "object",
+                properties: {
+                    a: {type: "object", properties: {
+                        b: {type: "object", properties: {
+                            c: {type: "number"}
+                        }}
+                    }}
+                }
+            });
+            s.validatePath({a:{b:{c:'fail'}}}, FailWith("a.b.c"));
+            s.validateValue({a:{b:{c:'fail'}}}, FailWith('fail'));
+        });
+        it("for arrays", function () {
+            var s = schema({
+                type: "array",
+                items: {
+                    type: "array",
+                    items: {type: "number"}
+                }
+            })
+            s.validatePath([[1,2],[3,"4"]], FailWith("1.1"));
+            s.validateValue([[1,2],[3,"4"]], FailWith("4"));
+        });
+        it("for additional items in arrays", function () {
+            var s = schema({
+                type: "array",
+                items: [
+                    {type: "number"}
+                ],
+                additionalItems: false
+            })
+            s.validatePath([1,2,3], FailWith("1", "2"));
+            s.validateValue([1,2,3], FailWith(2, 3));
+        });
+        it("for additional properties in object", function () {
+            var s = schema({
+                type: "object",
+                properties: {
+                    a: {type: "number"}
+                },
+                additionalProperties: false
+            })
+            s.validatePath({a: 10, b: 20}, FailWith("b"));
+            s.validateValue({a: 10, b: 20}, FailWith(20));
+        })
+    });
+
+    describe("custom validators & messages", function () {
+
+    });
 });
