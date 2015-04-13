@@ -3,6 +3,9 @@ var expect = require('expect.js');
 var Validator = require('../src/iterator').Validator;
 var path = require('path');
 
+var V2 = require('../src/v4validator_compiled');
+var compile = require('../src/compiler');
+
 var ignored = require('./ignored.json');
 
 function loadSuite(dir) {
@@ -31,11 +34,16 @@ describe("Official json schema tests suite", function() {
     suite.forEach(function(s) {
         describe(s.description + " [" + s.file + "]", function() {
             if (isIgnored(s.description)) return console.warn("  [IGNORED] " + s.description + ": *");
+            var fn = compile(s.schema, V2.factory(), {noinline:true});
             s.tests.forEach(function(t) {
                 if (isIgnored(t.description)) return console.warn("  [IGNORED] " + s.description + ": " + t.description);
                 it(t.description, function() {
-                    var r = Validator().schema(s.schema)(t.data);
+                    var r = fn(t.data);
+                    if (r.valid !== t.valid) {
+                        console.error(fn.fn.toString());
+                    }
                     expect(r).to.eql(t.valid ? {valid: t.valid, errors: []} : {valid: t.valid, errors: r.errors});
+
                 })
             });
         });

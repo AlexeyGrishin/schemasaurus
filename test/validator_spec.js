@@ -1,6 +1,9 @@
 var expect = require('expect.js');
 var Validator = require('../src/iterator').Validator;
 
+var V2 = require('../src/v4validator_compiled');
+var C2 = require('../src/compiler');
+
 describe("validator", function() {
 
     var Ok = {valid: true, errors: []};
@@ -9,7 +12,7 @@ describe("validator", function() {
     }
 
     function validate(schema, value, exp, opts) {
-        var it = Validator(opts).schema(schema);
+        var it = C2(schema, V2.factory(opts));
         var res = it(value);
         res.errors = res.errors.map(function(e) { return e.code; });
         expect({value: value, validationResult: res}).to.eql({value: value, validationResult: exp});
@@ -19,8 +22,8 @@ describe("validator", function() {
         var o = undefined;
         return {
             withFormat: function(fmt) {
-                o = o || {};
-                o.formats = [fmt];
+                o = o || {formats: {}};
+                o.formats[fmt.name] = fmt;
                 return this;
             },
             validate: function(value, exp) {
@@ -133,26 +136,17 @@ describe("validator", function() {
             })
         });
         describe("with custom format", function() {
-            Validator.meta.addFormat({
-                name: "pet",
-                regexp: /(dog|cat|rat)/,
-                message: "shall be pet"
-            });
-            it("shall check format specified with regexp globally", function() {
+            it("shall check format specified with regexp locally", function() {
                 schema({type: "string", format: "pet"})
+                    .withFormat({
+                        name: "pet",
+                        regexp: /(dog|cat|rat)/,
+                        message: "shall be pet"
+                    })
                     .validate("cat", Ok)
                     .validate("dog", Ok)
                     .validate("rat", Ok)
                     .validate("crow", FailWith("type.string.format.pet"))
-            });
-            it("shall check format specified by function locally", function() {
-                schema({type: "string", format: "strength"})
-                    .withFormat({
-                        name: "strength",
-                        test: function(v) { return v !== 'qwerty';},
-                        message: "shall be stronger"
-                    })                    .validate("qwerty", FailWith("type.string.format.strength"))
-                    .validate("!K&$F", Ok)
             });
             it("shall throw error on unknown format", function() {
                 var s = schema({type: "string", format: "unknown"});
