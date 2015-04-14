@@ -12,6 +12,13 @@ function CurrentObject(path) {
     this.self = null;
 }
 CurrentObject.prototype = {
+    reset: function (path, self) {
+        this.path = path ? path.slice() : [];
+        this.self = self;
+        this.si = 0;
+        this.parent = null;
+        this.property = null;
+    },
     replace: function (newVal) {
         this.parent[this.property] = newVal;
     },
@@ -161,7 +168,7 @@ function compile(userSchema, selectorCtor, options, path) {
     options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false : options.ignoreAdditionalItems;
 
     var code = [],
-        schema = clone(userSchema),
+        schema = userSchema,
         selector = selectorCtor(),
         vars = [],
         fnin,
@@ -250,7 +257,7 @@ function compile(userSchema, selectorCtor, options, path) {
     ctx.compile = function (subschema, newFnName) {
         if (Array.isArray(subschema)) {
             innerFns.push(ctx[newFnName] = subschema.map(function (s) {
-                return compile(s, selectorCtor, options, ctx.path.slice());
+                return compile(s, selectorCtor, options);
             }));
         } else {
             innerFns.push(ctx[newFnName] = compile(subschema, selectorCtor, options, ctx.path.slice()));
@@ -264,7 +271,7 @@ function compile(userSchema, selectorCtor, options, path) {
 
         if (schema.$$visited) {
             //TODO: this is solution only for root recursion - to pass official suite :)
-            code.push("if (" + varName + " !== undefined) self(" + varName + ",this);");
+            code.push("if (" + varName + " !== undefined) self(" + varName + ",ctx.path);");
             return;
         }
         Object.defineProperty(schema, "$$visited", {value: true, enumerable: false, configurable: true});
@@ -289,7 +296,7 @@ function compile(userSchema, selectorCtor, options, path) {
         }
         if (opts.path) {
             code.push("ctx.push(" + opts.path + ", " + opts.parent + "," + varName + ")");
-            ctx.push(opts.path, opts.parentSchema, schema);
+            ctx.push(opts.schemaPath, opts.parentSchema, schema);
         }
 
 
@@ -318,7 +325,7 @@ function compile(userSchema, selectorCtor, options, path) {
                     if (!options.ignoreAdditionalItems) {
                         code.push(propsVar + "." + k + " = true");
                     }
-                    step(schema.properties[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema});
+                    step(schema.properties[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema, schemaPath: k});
                 }
             }
             if (!options.ignoreAdditionalItems) {
@@ -329,18 +336,18 @@ function compile(userSchema, selectorCtor, options, path) {
                 for (k in (schema.patternProperties || {})) {
                     if (schema.patternProperties.hasOwnProperty(k)) {
                         code.push("if (/" + k + "/.test(" + idxvar + ")) {");
-                        step(schema.patternProperties[k], newvar, {path: idxvar, parent: varName, parentSchema: schema});
+                        step(schema.patternProperties[k], newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: k});
                         code.push(propsVar + "[" + idxvar + "] = true");
                         code.push("}");
                     }
                 }
                 code.push("if (!" + propsVar + "[" + idxvar + "]) {");
                 if (schema.additionalProperties === false) {
-                    step({additionalProperty: false}, newvar, {path: idxvar, parent: varName, parentSchema: schema});
+                    step({additionalProperty: false}, newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
                 } else if (typeof schema.additionalProperties === 'object') {
-                    step(schema.additionalProperties, newvar, {path: idxvar, parent: varName, parentSchema: schema});
+                    step(schema.additionalProperties, newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
                 } else {
-                    step({additionalProperty: "allowed"}, newvar, {path: idxvar, parent: varName, parentSchema: schema});
+                    step({additionalProperty: "allowed"}, newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
                 }
                 code.push("}");
                 code.push("}");
@@ -352,18 +359,18 @@ function compile(userSchema, selectorCtor, options, path) {
                 code.push("for (" + idxvar + " = 0; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
                 newvar = createVar();
                 code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                step(schema.items, newvar, {attr: "item", path: idxvar, parent: varName, parentSchema: schema});
+                step(schema.items, newvar, {attr: "item", path: idxvar, parent: varName, parentSchema: schema, schemaPath: "[]"});
                 code.push("}");
                 if (!options.ignoreSchemaOnly) {
                     code.push("if (schemaOnly) {");
-                    step(schema.items, 'nil', {attr: "item", path: "'[]'", parent: varName, parentSchema: schema});
+                    step(schema.items, 'nil', {attr: "item", path: "'[]'", parent: varName, parentSchema: schema, schemaPath: "[]"});
                     code.push("}");
                 }
             } else {
                 for (k = 0; k < schema.items.length; k = k + 1) {
                     newvar = createVar();
                     code.push(newvar + " = " + varName + " ? " + varName + "[" + k + "] : undefined");
-                    step(schema.items[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema});
+                    step(schema.items[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema, schemaPath: k});
                 }
                 if (!options.ignoreAdditionalItems) {
                     idxvar = createVar();
@@ -371,11 +378,11 @@ function compile(userSchema, selectorCtor, options, path) {
                     newvar = createVar();
                     code.push(newvar + " = " + varName + "[" + idxvar + "]");
                     if (schema.additionalItems === false) {
-                        step({additionalItem: false}, newvar, {path:idxvar, parent: varName, parentSchema: schema});
+                        step({additionalItem: false}, newvar, {path:idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
                     } else if (typeof schema.additionalItems === 'object') {
-                        step(schema.additionalItems, newvar, {path:idxvar, parent: varName, parentSchema: schema});
+                        step(schema.additionalItems, newvar, {path:idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
                     } else {
-                        step({additionalItem: "allowed"}, newvar, {path:idxvar, parent: varName, parentSchema: schema});
+                        step({additionalItem: "allowed"}, newvar, {path:idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
                     }
                     code.push("}");
                 }
@@ -400,10 +407,10 @@ function compile(userSchema, selectorCtor, options, path) {
     var fnbody = prettifyCode(code).map(function (line) {
         return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
     }).join("\n");
-    fnbody = ["var self; selector._f = function(val) { var nil = undefined, schemaOnly = val === undefined"]
-        .concat(vars).join(",") + ";\nctx.self=val;\n"
+    fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
+        .concat(vars).join(",") + ";\nctx.reset(path, val);"
         + fnbody
-        + "}; self = function (val) {" + (selector.reset ? "selector.reset();" : "") + "return selector._f(val) }; self.fn = selector._f; return self; ";
+        + "}; self = function (val, path) {" + (selector.reset ? "selector.reset();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
     try {
         fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
     }
@@ -411,7 +418,7 @@ function compile(userSchema, selectorCtor, options, path) {
         console.error(fnbody);
         throw e;
     }
-    var co = new CurrentObject(path);
+    var co = new CurrentObject();
     var so = (selector.clone ? selector.clone() : selectorCtor());
     fnin = fnout(so, schemas, innerFns, co);
 

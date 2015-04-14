@@ -2,37 +2,37 @@
 
 function messages(gettext) {
     return {
-        "type.string": gettext("shall be a string"),
-        "type.null": gettext("shall be null"),
-        "type.string.minLength": gettext("shall have length at least %d"),
-        "type.string.maxLength": gettext("shall have length no more than %d"),
-        "type.string.pattern": gettext("shall match pattern %s"),
-        "type.integer": gettext("shall be an integer"),
-        "type.integer.multipleOf": gettext("shall be multiple of %d"),
-        "type.number": gettext("shall be a number"),
-        "type.number.minimum": gettext("shall be >= %d"),
-        "type.number.minimum.exclusive": gettext("shall be > %d"),
-        "type.number.maximum": gettext("shall be <= %d"),
-        "type.number.maximum.exclusive": gettext("shall be < %d"),
-        "type.boolean": gettext("shall be boolean"),
-        "type.object": gettext("shall be object"),
-        "type.object.required": gettext("is required"),
-        "type.object.additionalProperties": gettext("shall not have additional properties"),
-        "type.object.minProperties": gettext("shall have at least %d properties"),
-        "type.object.maxProperties": gettext("shall have no more than %d properties"),
-        "type.array": gettext("shall be array"),
-        "type.array.additionalItems": gettext("shall not have additional items"),
-        "type.array.minItems": gettext("shall have at least %d items"),
-        "type.array.maxItems": gettext("shall have no more %d items"),
-        "type.array.uniqueItems": gettext("shall have unique items"),
-        "type.enum": gettext("shall be one of values %s"),
+        "string": gettext("shall be a string"),
+        "null": gettext("shall be null"),
+        "minLength": gettext("shall have length at least %d"),
+        "maxLength": gettext("shall have length no more than %d"),
+        "pattern": gettext("shall match pattern %s"),
+        "integer": gettext("shall be an integer"),
+        "multipleOf": gettext("shall be multiple of %d"),
+        "number": gettext("shall be a number"),
+        "minimum": gettext("shall be >= %d"),
+        "minimum.exclusive": gettext("shall be > %d"),
+        "maximum": gettext("shall be <= %d"),
+        "maximum.exclusive": gettext("shall be < %d"),
+        "boolean": gettext("shall be boolean"),
+        "object": gettext("shall be object"),
+        "additionalProperties": gettext("shall not have additional properties"),
+        "minProperties": gettext("shall have at least %d properties"),
+        "maxProperties": gettext("shall have no more than %d properties"),
+        "array": gettext("shall be array"),
+        "additionalItems": gettext("shall not have additional items"),
+        "minItems": gettext("shall have at least %d items"),
+        "maxItems": gettext("shall have no more %d items"),
+        "uniqueItems": gettext("shall have unique items"),
+        "enum": gettext("shall be one of values %s"),
         "required": gettext("is required"),
         "dependency": gettext("does not meet additional requirements for %s"),
         "not": gettext("does not meet 'not' requirement"),
         "oneOf": gettext("does not meet exactly one requirement"),
         "oneOf.zero": gettext("does not meet any requirement"),
         "allOf": gettext("does not meet all requirements"),
-        "anyOf": gettext("does not meet any requirement")
+        "anyOf": gettext("does not meet any requirement"),
+        "custom": gettext("is not valid")
     };
 }
 
@@ -69,9 +69,13 @@ function fillDefaultFormats(formats) {
 
 function V4Validator(options) {
     this.options = options || {};
-    if (!this.options.messages) {
-        this.options.messages = messages(this.options.gettext || function (s) { return s; });
+    if (!this.options.gettext) {
+        this.options.gettext = function (s) { return s; };
     }
+    if (!this.options.messages) {
+        this.options.messages = messages(this.options.gettext);
+    }
+    this.custom = this.options.custom || {};
     this.formats = this.options.formats || {};
     fillDefaultFormats(this.formats);
     this.errors = [];
@@ -86,52 +90,58 @@ V4Validator.prototype = {
         return typeof o === 'object' ? JSON.stringify(o) : o;
     },
     error: function (code, ctx, arg, subpath) {
+        var msg = this.$cm ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
+        delete this.$cm;
         this.errors.push({
             code: code,
-            message: this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }()),
+            message: msg,
             value: ctx.self,
             arg: arg,
-            path: ctx.path.join(".") + (subpath ? "." + subpath : "")
+            path: ctx.path.slice()
         });
     },
     errorIf: function (condition, code, ctx, arg, subpath) {
         if (condition) {
-            this.errors.push({
-                code: code,
-                message: this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }()),
-                value: ctx.self,
-                arg: arg,
-                path: ctx.path.join(".") + (subpath ? "." + subpath : "")
-            });
+            this.error(code, ctx, arg, subpath);
         }
     },
     copyErrors: function (anotherErrors) {
         this.errors.splice.apply(this.errors, [this.errors.length, 0].concat(anotherErrors));
     },
+
+    "[messages]": function (s, ctx) {
+        this.$messages = this.$messages || [];
+        this.$messages.push(s.messages);
+        return {inline: "this.$cm = this.$messages[" + (this.$messages.length - 1) + "]"};
+    },
+
+    ////////////// type & common
+
+
     "[^required]": {prepare: function (s, ctx) {
         if (!ctx.parent) return null;
         return {inline: "if (_ === undefined) ctx.stop()"};
     }},
     "[type=string]": {inline: function (_, ctx) {
-        if(typeof _ !== 'string') this.error('type.string', ctx);
+        if(typeof _ !== 'string') this.error('string', ctx);
     }},
     "[type=number]": {inline: function (_, ctx) {
-        if(typeof _ !== 'number') this.error('type.number', ctx);
+        if(typeof _ !== 'number') this.error('number', ctx);
     }},
     "[type=integer]": {inline: function (_, ctx) {
-        if((typeof _ !== 'number') || (_ % 1 !== 0)) this.error('type.integer', ctx);
+        if((typeof _ !== 'number') || (_ % 1 !== 0)) this.error('integer', ctx);
     }},
     "[type=null]": {inline: function (_, ctx) {
-        if(_ !== null) this.error('type.null', ctx);
+        if(_ !== null) this.error('null', ctx);
     }},
     "[type=boolean]": {inline: function (_, ctx) {
-        if(typeof _ !== 'boolean') this.error('type.boolean', ctx);
+        if(typeof _ !== 'boolean') this.error('boolean', ctx);
     }},
     "[type=array]": {inline: function (_, ctx) {
-        if(!Array.isArray(_)) this.error('type.array', ctx);
+        if(!Array.isArray(_)) this.error('array', ctx);
     }},
     "[type=object]": {inline: function (_, ctx) {
-        if(Array.isArray(_) || typeof _ !== 'object' || _ === null) this.error('type.object', ctx);
+        if(Array.isArray(_) || typeof _ !== 'object' || _ === null) this.error('object', ctx);
     }},
     "[type]": function (schema) {
         if (Array.isArray(schema.type)) {
@@ -183,7 +193,7 @@ V4Validator.prototype = {
 
     "[allOf]": {inline: function (_, ctx) {
         for (var i = 0; i < ctx.allOf.length; i++) {
-            var res = ctx.allOf[i](_);
+            var res = ctx.allOf[i](_, ctx.path);
 
             if (!res.valid) {
                 this.error("allOf", ctx);
@@ -195,7 +205,7 @@ V4Validator.prototype = {
     "[anyOf]": {inline: function (_, ctx) {
         var allErrors = [], res;
         for (var i = 0; i < ctx.anyOf.length; i++) {
-            res = ctx.anyOf[i](_);
+            res = ctx.anyOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
             if (res.valid) break;
         }
@@ -208,7 +218,7 @@ V4Validator.prototype = {
     "[oneOf]": {inline: function (_, ctx) {
         var count = 0, allErrors = [], res;
         for (var i = 0; i < ctx.oneOf.length; i++) {
-            res = ctx.oneOf[i](_);
+            res = ctx.oneOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
             if (res.valid) count++;
         }
@@ -222,7 +232,7 @@ V4Validator.prototype = {
     }},
 
     "[not]": {inline: function (_, ctx) {
-        var res = ctx.not(_);
+        var res = ctx.not(_, ctx.path);
         if (res.valid) {
             this.error("not", ctx);
         }
@@ -238,43 +248,43 @@ V4Validator.prototype = {
             $enum[this.toComparable(e)] = 1;
         }
         this.$enums.push($enum);
-        return {inline: "if(!this.$enums[" + (this.$enums.length-1) + "][this.toComparable(_)]) this.error('type.enum', ctx, " + JSON.stringify(schema.enum) + ")"};
+        return {inline: "if(!this.$enums[" + (this.$enums.length-1) + "][this.toComparable(_)]) this.error('enum', ctx, " + JSON.stringify(schema.enum) + ")"};
     },
 
     //////////////// string
 
     "[maxLength]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && _.length > " + schema.maxLength + ") this.error('type.string.maxLength', ctx, " + schema.maxLength + ")"}
+        return {inline: "if (typeof _ === 'string' && _.length > " + schema.maxLength + ") this.error('maxLength', ctx, " + schema.maxLength + ")"}
     },
     "[minLength]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && _.length < " + schema.minLength + ") this.error('type.string.minLength', ctx, " + schema.minLength + ")"}
+        return {inline: "if (typeof _ === 'string' && _.length < " + schema.minLength + ") this.error('minLength', ctx, " + schema.minLength + ")"}
     },
     "[pattern]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('type.string.pattern', ctx, " + JSON.stringify(schema.pattern) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('pattern', ctx, " + JSON.stringify(schema.pattern) + ")"}
     },
     "[format]": function (schema) {
         var fmt = this.formats[schema.format];
         if (!fmt) {
             throw new Error("Unknown format '" + schema.format + "'. Did you forget to register it?");
         }
-        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('type.string.format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"}
     },
 
     ////////////////// array
 
     "[additionalItem=false]": {inline: function (_, ctx) {
-        this.error("type.array.additionalItems", ctx);
+        this.error("additionalItems", ctx);
     }},
 
     "[minItems]": function (schema) {
         return {
-            inline: "if(Array.isArray(_) && _.length < " + schema.minItems + ") this.error('type.array.minItems', ctx)"
+            inline: "if(Array.isArray(_) && _.length < " + schema.minItems + ") this.error('minItems', ctx)"
         }
     },
 
     "[maxItems]": function (schema) {
         return {
-            inline: "if(Array.isArray(_) && _.length > " + schema.maxItems + ") this.error('type.array.maxItems', ctx)"
+            inline: "if(Array.isArray(_) && _.length > " + schema.maxItems + ") this.error('maxItems', ctx)"
         }
     },
 
@@ -286,7 +296,7 @@ V4Validator.prototype = {
         var its = {}, i, o;
         for (i = 0; i < _.length; i = i + 1) {
             o = this.toComparable(_[i]);
-            this.errorIf(its[o], "type.array.uniqueItems", ctx, _[i]);
+            this.errorIf(its[o], "uniqueItems", ctx, _[i]);
             its[o] = true;
         }
     }},
@@ -299,7 +309,7 @@ V4Validator.prototype = {
                 if (!isObject(o)) return;
                 var i;
                 for (i = 0; i < reqs.length; i++) {
-                    this.errorIf(!o.hasOwnProperty(reqs[i]), "type.object.required", ctx, null, reqs[i]);
+                    this.errorIf(!o.hasOwnProperty(reqs[i]), "required", ctx, null, reqs[i]);
                 }
             }
         }
@@ -315,7 +325,7 @@ V4Validator.prototype = {
                 if (!isObject(o)) return;
                 var i;
                 for (i = 0; i < reqs.length; i++) {
-                    this.errorIf(!o.hasOwnProperty(reqs[i]), "type.object.required", ctx, null, reqs[i]);
+                    this.errorIf(!o.hasOwnProperty(reqs[i]), "required", ctx, null, reqs[i]);
                 }
             }
         }
@@ -323,27 +333,48 @@ V4Validator.prototype = {
 
     "[maxProperties]": function (schema) {
         var count = schema.maxProperties;
-        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length > " + count + ", 'type.object.maxProperties', ctx, " + count + ")"}
+        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length > " + count + ", 'maxProperties', ctx, " + count + ")"}
     },
 
     "[minProperties]": function (schema) {
         var count = schema.minProperties;
-        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length < " + count + ", 'type.object.minProperties', ctx, " + count + ")"}
+        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length < " + count + ", 'minProperties', ctx, " + count + ")"}
     },
 
     "[additionalProperty=false]": {inline: function (_, ctx) {
-        this.error("type.object.additionalProperties", ctx);
+        this.error("additionalProperties", ctx);
     }},
 
     ///////////////// number
     "[multipleOf]": function (schema) {
-        return {inline: "if (typeof _ === 'number' ) this.errorIf((_ / " + schema.multipleOf + ") % 1 !== 0, 'type.integer.multipleOf', ctx, " + schema.multipleOf + ")" }
+        return {inline: "if (typeof _ === 'number' ) this.errorIf((_ / " + schema.multipleOf + ") % 1 !== 0, 'multipleOf', ctx, " + schema.multipleOf + ")" }
     },
     "[minimum]": function (schema) {
-        return {inline: "this.errorIf(_ " + (schema.exclusiveMinimum ? "<=" : "<") + schema.minimum + ", 'type.number.minimum" + (schema.exclusiveMinimum ? ".exclusive" : "") + "', ctx, " + schema.minimum + ")"}
+        return {inline: "this.errorIf(_ " + (schema.exclusiveMinimum ? "<=" : "<") + schema.minimum + ", 'minimum" + (schema.exclusiveMinimum ? ".exclusive" : "") + "', ctx, " + schema.minimum + ")"}
     },
     "[maximum]": function (schema) {
-        return {inline: "this.errorIf(_ " + (schema.exclusiveMaximum ? ">=" : ">") + schema.maximum + ", 'type.number.maximum" + (schema.exclusiveMaximum ? ".exclusive" : "") + "', ctx, " + schema.maximum + ")"}
+        return {inline: "this.errorIf(_ " + (schema.exclusiveMaximum ? ">=" : ">") + schema.maximum + ", 'maximum" + (schema.exclusiveMaximum ? ".exclusive" : "") + "', ctx, " + schema.maximum + ")"}
+    },
+
+    ///////////////// custom
+    "[conform]": function (schema, ctx) {
+        this.$custom = this.$custom || [];
+        if (typeof schema.conform === 'function') {
+            this.$custom.push(schema.conform);
+            return {inline: "this.errorIf(!this.$custom[" + (this.$custom.length - 1) + "](_, ctx), 'custom', ctx)"}
+        }
+        else {
+            var inlines = [];
+            for (var k in schema.conform) {
+                if (schema.conform.hasOwnProperty(k)) {
+                    var fn = this.custom[k];
+                    var args = schema.conform[k].map(JSON.stringify).concat([""]).join(',');
+                    this.$custom.push(fn);
+                    inlines.push("this.errorIf(!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx), 'custom." + k + "', ctx, this.options.messages.custom)");
+                }
+            }
+            return {inline: inlines.join('\n')};
+        }
     },
 
     ///////////////// result
@@ -356,6 +387,8 @@ V4Validator.prototype = {
     clone: function () {
         var v = new V4Validator(this.options);
         v.$enums = this.$enums;
+        v.$custom = this.$custom;
+        v.$messages = this.$messages;
         return v;
     },
 

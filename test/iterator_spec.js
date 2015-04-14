@@ -117,4 +117,43 @@ describe("iterator", function () {
         expect(compile({a: 1, b: 2}, selector)()).to.eql("a");
     });
 
+    it("shall provide correct path for objects", function () {
+        var selector = factory({
+            "[a]": function (s, o, c) { this.called = c.path.slice(); },
+            done: function () { return this.called; }
+        });
+        expect(compile({properties: {
+            p1: {properties: {
+                p2: {type: 'string', a: true}
+            }}
+        }}, selector)()).to.eql(["p1", "p2"]);
+    });
+
+    it("shall provide correct path for arrays", function () {
+        var selector = factory({
+            "[a]": function (s, o, c) { this.called = c.path.slice(); },
+            done: function () { return this.called; }
+        });
+        expect(compile({properties: {
+            p1: {
+                items: {type: 'string', a: true}
+            }
+        }}, selector)()).to.eql(["p1", "[]"]);
+    });
+
+    describe("pre-compiling", function () {
+
+        it ("shall provide correct schema-level path", function () {
+            var selector = factory({
+                "[a]": function (s, c) {
+                    this.path = c.path.slice();
+                    return null;
+                },
+                clone: function () { return this; },
+                done: function () { return this.path; }
+            });
+            expect(compile({properties: {q: {properties: {w: {items: {a: 10}}}}}}, selector)()).to.eql(["q", "w", "[]"]);
+        });
+    });
+
 });
