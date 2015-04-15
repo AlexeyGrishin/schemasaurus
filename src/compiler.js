@@ -28,7 +28,7 @@ CurrentObject.prototype = {
     push: function (prop, parent, self) {
         this.path.push(prop);
         this.stack[this.si] = [prop, parent, self];
-        this.si++;
+        this.si = this.si + 1;
         this.property = prop;
         this.parent = parent;
         this.self = self;
@@ -44,7 +44,7 @@ CurrentObject.prototype = {
         return false;
     },
     pop: function () {
-        this.si--;
+        this.si = this.si - 1;
         this.path.pop();
         var last = this.stack[this.si];
         if (last) {
@@ -61,10 +61,11 @@ function defaultLoader() {
     throw new Error("Remote refs are not supported for now :(");
 }
 
+function detilde(s) {
+    return s.replace(/~0/g, "~").replace(/~1/g, "/");   //do not know how to parse it other way
+}
+
 function resolveRef(loader, schemaNode, ref) {
-    function detilde(s) {
-        return s.replace(/~0/g, "~").replace(/~1/g, "/");   //do not know how to parse it other way
-    }
     var remLoc = decodeURI(ref).split("#"), rem = remLoc[0], loc = remLoc[1].split("/").map(detilde), st = schemaNode, i;
     if (rem !== '') {
         st = loader(rem);
@@ -205,23 +206,42 @@ function compile(userSchema, selectorCtor, options, path) {
         return newvar;
     }
 
-    function addFn(fn, name, varName, schema, stopLabel, allowReturn) {
-        var fnbody, k, useinner = false;
-        if (fn.prepare || {1:1,2:1}[fn.length] /*todo: ugly */) {
+    function addFn(fn, name, varName, schema, stopLabel) {
+        var fnbody, k, useinner = false, allowReturn = !stopLabel;
+        if (fn.prepare || fn.length === 1 || fn.length === 2) {
             fn = (fn.prepare || fn).call(selector, schema, ctx);
             useinner = true;
         }
-        if (!fn) return;
+        if (!fn) {
+            return;
+        }
+
+        function addDirectCall(fn, schemaNr, dontUseInner) {
+            if (!dontUseInner) {
+                innerFns.push(fn);
+            }
+            var callBody = [];
+            if (allowReturn) {
+                callBody.push("return");
+            }
+            callBody.push(dontUseInner ? "this['" + name + "'](" : "innerFns[" + (innerFns.length - 1) + "].call(this,");
+            if (schemaNr !== undefined) {
+                callBody.push('schemas[' + schemaNr + '], ');
+            }
+            callBody.push(varName + ", ctx)");
+            code.push(callBody.join(" "));
+            if (stopLabel) {
+                code.push("if (ctx.isStopped()) break " + stopLabel);
+            }
+        }
+
+
         code.push("//call " + name);
         if (fn.inline) {
 
             if (typeof fn.inline === 'function' && options.noinline) {
-                innerFns.push(fn.inline);
-                code.push((allowReturn ? "return " : "") + "innerFns[" + (innerFns.length-1) + "].call(this, " + varName + ", ctx)");
-                if (stopLabel) code.push("if (ctx.isStopped()) break " + stopLabel);
-            }
-            else {
-
+                addDirectCall(fn.inline);
+            } else {
                 label = "label" + labelCount++;
                 fnbody = fn.inline.toString()
                     .replace(/^function\s*\([^)]*\)/, "")
@@ -243,14 +263,10 @@ function compile(userSchema, selectorCtor, options, path) {
             }
         } else if (useinner) {
             schemas.push(schema);
-            innerFns.push(fn);
-            code.push((allowReturn ? "return " : "") + "innerFns[" + (innerFns.length-1) + "].call(this, schemas[" + (schemas.length-1) + "], " + varName + ", ctx)");
-            if (stopLabel) code.push("if (ctx.isStopped()) break " + stopLabel);
+            addDirectCall(fn, schemas.length - 1);
         } else {
             schemas.push(schema);
-            code.push((allowReturn ? "return " : "") + "this['" + name + "'](schemas[" + (schemas.length-1) + "], " + varName + ", ctx)");
-            if (stopLabel) code.push("if (ctx.isStopped()) break " + stopLabel);
-
+            addDirectCall(fn, schemas.length - 1, true);
         }
     }
 
@@ -266,8 +282,104 @@ function compile(userSchema, selectorCtor, options, path) {
     };
 
     function step(schema, varName, opts) {
-        var k, newvar, idxvar, propsVar;
+        var i, k, perAttribute;
         opts = opts || {};
+
+        function callback(attr) {
+            var noCodeAdded = code.length + 1, clabel = "label" + labelCount++;
+            code.push(clabel + ": {");
+            matchFns(schema, attr, function (s, name) {
+                addFn(s, name, varName, schema, clabel);
+            });
+            if (code.length === noCodeAdded) {
+                code.pop();
+            } else {
+                code.push("}");
+            }
+        }
+
+        function withOptions(schemaPath, path, attr) {
+            return {parent: varName, parentSchema: schema, schemaPath: schemaPath, path: path || JSON.stringify(schemaPath), attr: attr};
+        }
+        function processAdditional(schemaProp, cbProp, idxvar, newvar) {
+            var stubSchema = {};
+            stubSchema[cbProp] = false;
+            if (schema[schemaProp] === false) {
+                step(stubSchema, newvar, withOptions("*", idxvar));
+            } else if (typeof schema[schemaProp] === 'object') {
+                step(schema[schemaProp], newvar, withOptions("*", idxvar));
+            } else {
+                stubSchema[cbProp] = "allowed";
+                step(stubSchema, newvar, withOptions("*", idxvar));
+            }
+        }
+
+        function stepProperties() {
+            var propsVar, idxvar, newvar;
+            if (!options.ignoreAdditionalItems) {
+                propsVar = createVar();
+                code.push(propsVar + " = {}");
+            }
+            for (k in schema.properties) {
+                if (schema.properties.hasOwnProperty(k)) {
+                    newvar = createVar();
+                    code.push(newvar + " = " + varName + " ? " + varName + "." + k + " : undefined");
+                    if (!options.ignoreAdditionalItems) {
+                        code.push(propsVar + "." + k + " = true");
+                    }
+                    step(schema.properties[k], newvar, withOptions(k));
+                }
+            }
+            if (!options.ignoreAdditionalItems) {
+                idxvar = createVar();
+                code.push("if (typeof " + varName + " === 'object' && !Array.isArray(" + varName + ")) for (" + idxvar + " in " + varName + ") if (" + varName + ".hasOwnProperty(" + idxvar + ")) {");
+                newvar = createVar();
+                code.push(newvar + " = " + varName + "[" + idxvar + "]");
+                for (k in (schema.patternProperties || {})) {
+                    if (schema.patternProperties.hasOwnProperty(k)) {
+                        code.push("if (/" + k + "/.test(" + idxvar + ")) {");
+                        step(schema.patternProperties[k], newvar, withOptions(k, idxvar));
+                        code.push(propsVar + "[" + idxvar + "] = true");
+                        code.push("}");
+                    }
+                }
+                code.push("if (!" + propsVar + "[" + idxvar + "]) {");
+                processAdditional("additionalProperties", "additionalProperty", idxvar, newvar);
+                code.push("}");
+                code.push("}");
+            }
+        }
+
+        function stepItems() {
+            var idxvar, newvar;
+            if (!Array.isArray(schema.items)) {
+                idxvar = createVar();
+                code.push("for (" + idxvar + " = 0; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
+                newvar = createVar();
+                code.push(newvar + " = " + varName + "[" + idxvar + "]");
+                step(schema.items, newvar, withOptions("[]", idxvar, "item"));
+                code.push("}");
+                if (!options.ignoreSchemaOnly) {
+                    code.push("if (schemaOnly) {");
+                    step(schema.items, 'nil', withOptions("[]", null, "item"));
+                    code.push("}");
+                }
+            } else {
+                for (k = 0; k < schema.items.length; k = k + 1) {
+                    newvar = createVar();
+                    code.push(newvar + " = " + varName + " ? " + varName + "[" + k + "] : undefined");
+                    step(schema.items[k], newvar, withOptions(k));
+                }
+                if (!options.ignoreAdditionalItems) {
+                    idxvar = createVar();
+                    code.push("for (" + idxvar + " = " + schema.items.length + "; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
+                    newvar = createVar();
+                    code.push(newvar + " = " + varName + "[" + idxvar + "]");
+                    processAdditional("additionalItems", "additionalItem", idxvar, newvar);
+                    code.push("}");
+                }
+            }
+        }
 
         if (schema.$$visited) {
             //TODO: this is solution only for root recursion - to pass official suite :)
@@ -281,24 +393,10 @@ function compile(userSchema, selectorCtor, options, path) {
             return;
         }
 
-        function callback(attr) {
-            var noCodeAdded = code.length + 1, label = "label" + labelCount++;
-            code.push(label +": {");
-            matchFns(schema, attr, function (s, name) {
-                addFn(s, name, varName, schema, label);
-            });
-            if (code.length === noCodeAdded) {
-                code.pop();
-            }
-            else {
-                code.push("}");
-            }
-        }
         if (opts.path) {
             code.push("ctx.push(" + opts.path + ", " + opts.parent + "," + varName + ")");
             ctx.push(opts.schemaPath, opts.parentSchema, schema);
         }
-
 
         ["oneOf", "anyOf", "allOf", "not"].forEach(function (inner) {
             if (schema[inner]) {
@@ -306,88 +404,26 @@ function compile(userSchema, selectorCtor, options, path) {
             }
         });
 
-
         if (opts.attr) {
             callback(opts.attr);
         }
         callback("start");
         callback();
 
-        if (schema.properties || schema.additionalProperties || schema.patternProperties) {
-            if (!options.ignoreAdditionalItems) {
-                propsVar = createVar();
-                code.push(propsVar + " = {}");
-            }
-            for (k in schema.properties) {
-                if (schema.properties.hasOwnProperty(k)) {
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + " ? " + varName + "." + k + " : undefined");
-                    if (!options.ignoreAdditionalItems) {
-                        code.push(propsVar + "." + k + " = true");
-                    }
-                    step(schema.properties[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema, schemaPath: k});
-                }
-            }
-            if (!options.ignoreAdditionalItems) {
-                idxvar = createVar();
-                code.push("if (typeof " + varName + " === 'object' && !Array.isArray(" + varName + ")) for (" + idxvar + " in " + varName + ") if (" + varName + ".hasOwnProperty(" + idxvar + ")) {");
-                newvar = createVar();
-                code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                for (k in (schema.patternProperties || {})) {
-                    if (schema.patternProperties.hasOwnProperty(k)) {
-                        code.push("if (/" + k + "/.test(" + idxvar + ")) {");
-                        step(schema.patternProperties[k], newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: k});
-                        code.push(propsVar + "[" + idxvar + "] = true");
-                        code.push("}");
-                    }
-                }
-                code.push("if (!" + propsVar + "[" + idxvar + "]) {");
-                if (schema.additionalProperties === false) {
-                    step({additionalProperty: false}, newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
-                } else if (typeof schema.additionalProperties === 'object') {
-                    step(schema.additionalProperties, newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
-                } else {
-                    step({additionalProperty: "allowed"}, newvar, {path: idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
-                }
-                code.push("}");
-                code.push("}");
-            }
-        }
-        if (schema.items || schema.additionalItems) {
-            if (!Array.isArray(schema.items)) {
-                idxvar = createVar();
-                code.push("for (" + idxvar + " = 0; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
-                newvar = createVar();
-                code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                step(schema.items, newvar, {attr: "item", path: idxvar, parent: varName, parentSchema: schema, schemaPath: "[]"});
-                code.push("}");
-                if (!options.ignoreSchemaOnly) {
-                    code.push("if (schemaOnly) {");
-                    step(schema.items, 'nil', {attr: "item", path: "'[]'", parent: varName, parentSchema: schema, schemaPath: "[]"});
-                    code.push("}");
-                }
-            } else {
-                for (k = 0; k < schema.items.length; k = k + 1) {
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + " ? " + varName + "[" + k + "] : undefined");
-                    step(schema.items[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema, schemaPath: k});
-                }
-                if (!options.ignoreAdditionalItems) {
-                    idxvar = createVar();
-                    code.push("for (" + idxvar + " = " + schema.items.length + "; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                    if (schema.additionalItems === false) {
-                        step({additionalItem: false}, newvar, {path:idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
-                    } else if (typeof schema.additionalItems === 'object') {
-                        step(schema.additionalItems, newvar, {path:idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
-                    } else {
-                        step({additionalItem: "allowed"}, newvar, {path:idxvar, parent: varName, parentSchema: schema, schemaPath: "*"});
-                    }
-                    code.push("}");
+
+        perAttribute = [
+            ["properties", "additionalProperties", "patternProperties", stepProperties],
+            ["items", "additionalItems", stepItems]
+        ];
+        for (i = 0; i < perAttribute.length; i++) {
+            for (k = 0; k < perAttribute[i].length - 1; k++) {
+                if (schema[perAttribute[i][k]]) {
+                    perAttribute[i].pop()();
+                    break;
                 }
             }
         }
+
         callback("end");
         if (opts.attr) {
             callback(opts.attr + "-end");
@@ -408,13 +444,12 @@ function compile(userSchema, selectorCtor, options, path) {
         return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
     }).join("\n");
     fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
-        .concat(vars).join(",") + ";\nctx.reset(path, val);"
-        + fnbody
-        + "}; self = function (val, path) {" + (selector.reset ? "selector.reset();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
+        .concat(vars).join(",") + ";\nctx.reset(path, val);" +
+            fnbody +
+            "}; self = function (val, path) {" + (selector.reset ? "selector.reset();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
     try {
         fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
-    }
-    catch (e) {
+    } catch (e) {
         console.error(fnbody);
         throw e;
     }
@@ -424,5 +459,7 @@ function compile(userSchema, selectorCtor, options, path) {
 
     return fnin;
 }
+
+
 
 module.exports = compile;
