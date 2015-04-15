@@ -1,8 +1,5 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.schemasaurus = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 "use strict";
-function clone(o) {
-    return JSON.parse(JSON.stringify(o));
-}
 
 function CurrentObject(path) {
     this.path = path ? path.slice() : [];
@@ -12,7 +9,15 @@ function CurrentObject(path) {
     this.property = null;
     this.self = null;
 }
+
 CurrentObject.prototype = {
+    reset: function (path, self) {
+        this.path = path ? path.slice() : [];
+        this.self = self;
+        this.si = 0;
+        this.parent = null;
+        this.property = null;
+    },
     replace: function (newVal) {
         this.parent[this.property] = newVal;
     },
@@ -22,7 +27,7 @@ CurrentObject.prototype = {
     push: function (prop, parent, self) {
         this.path.push(prop);
         this.stack[this.si] = [prop, parent, self];
-        this.si++;
+        this.si = this.si + 1;
         this.property = prop;
         this.parent = parent;
         this.self = self;
@@ -38,7 +43,7 @@ CurrentObject.prototype = {
         return false;
     },
     pop: function () {
-        this.si--;
+        this.si = this.si - 1;
         this.path.pop();
         var last = this.stack[this.si];
         if (last) {
@@ -55,10 +60,11 @@ function defaultLoader() {
     throw new Error("Remote refs are not supported for now :(");
 }
 
+function detilde(s) {
+    return s.replace(/~0/g, "~").replace(/~1/g, "/");   //do not know how to parse it other way
+}
+
 function resolveRef(loader, schemaNode, ref) {
-    function detilde(s) {
-        return s.replace(/~0/g, "~").replace(/~1/g, "/");   //do not know how to parse it other way
-    }
     var remLoc = decodeURI(ref).split("#"), rem = remLoc[0], loc = remLoc[1].split("/").map(detilde), st = schemaNode, i;
     if (rem !== '') {
         st = loader(rem);
@@ -162,7 +168,7 @@ function compile(userSchema, selectorCtor, options, path) {
     options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false : options.ignoreAdditionalItems;
 
     var code = [],
-        schema = clone(userSchema),
+        schema = userSchema,
         selector = selectorCtor(),
         vars = [],
         fnin,
@@ -199,23 +205,42 @@ function compile(userSchema, selectorCtor, options, path) {
         return newvar;
     }
 
-    function addFn(fn, name, varName, schema, stopLabel, allowReturn) {
-        var fnbody, k, useinner = false;
-        if (fn.prepare || {1:1,2:1}[fn.length] /*todo: ugly */) {
+    function addFn(fn, name, varName, schema, stopLabel) {
+        var fnbody, k, useinner = false, allowReturn = !stopLabel;
+        if (fn.prepare || fn.length === 1 || fn.length === 2) {
             fn = (fn.prepare || fn).call(selector, schema, ctx);
             useinner = true;
         }
-        if (!fn) return;
+        if (!fn) {
+            return;
+        }
+
+        function addDirectCall(fn, schemaNr, dontUseInner) {
+            if (!dontUseInner) {
+                innerFns.push(fn);
+            }
+            var callBody = [];
+            if (allowReturn) {
+                callBody.push("return");
+            }
+            callBody.push(dontUseInner ? "this['" + name + "'](" : "innerFns[" + (innerFns.length - 1) + "].call(this,");
+            if (schemaNr !== undefined) {
+                callBody.push('schemas[' + schemaNr + '], ');
+            }
+            callBody.push(varName + ", ctx)");
+            code.push(callBody.join(" "));
+            if (stopLabel) {
+                code.push("if (ctx.isStopped()) break " + stopLabel);
+            }
+        }
+
+
         code.push("//call " + name);
         if (fn.inline) {
 
             if (typeof fn.inline === 'function' && options.noinline) {
-                innerFns.push(fn.inline);
-                code.push((allowReturn ? "return " : "") + "innerFns[" + (innerFns.length-1) + "].call(this, " + varName + ", ctx)");
-                if (stopLabel) code.push("if (ctx.isStopped()) break " + stopLabel);
-            }
-            else {
-
+                addDirectCall(fn.inline);
+            } else {
                 label = "label" + labelCount++;
                 fnbody = fn.inline.toString()
                     .replace(/^function\s*\([^)]*\)/, "")
@@ -237,21 +262,17 @@ function compile(userSchema, selectorCtor, options, path) {
             }
         } else if (useinner) {
             schemas.push(schema);
-            innerFns.push(fn);
-            code.push((allowReturn ? "return " : "") + "innerFns[" + (innerFns.length-1) + "].call(this, schemas[" + (schemas.length-1) + "], " + varName + ", ctx)");
-            if (stopLabel) code.push("if (ctx.isStopped()) break " + stopLabel);
+            addDirectCall(fn, schemas.length - 1);
         } else {
             schemas.push(schema);
-            code.push((allowReturn ? "return " : "") + "this['" + name + "'](schemas[" + (schemas.length-1) + "], " + varName + ", ctx)");
-            if (stopLabel) code.push("if (ctx.isStopped()) break " + stopLabel);
-
+            addDirectCall(fn, schemas.length - 1, true);
         }
     }
 
     ctx.compile = function (subschema, newFnName) {
         if (Array.isArray(subschema)) {
             innerFns.push(ctx[newFnName] = subschema.map(function (s) {
-                return compile(s, selectorCtor, options, ctx.path.slice());
+                return compile(s, selectorCtor, options);
             }));
         } else {
             innerFns.push(ctx[newFnName] = compile(subschema, selectorCtor, options, ctx.path.slice()));
@@ -260,54 +281,40 @@ function compile(userSchema, selectorCtor, options, path) {
     };
 
     function step(schema, varName, opts) {
-        var k, newvar, idxvar, propsVar;
+        var i, k, perAttribute;
         opts = opts || {};
 
-        if (schema.$$visited) {
-            //TODO: this is solution only for root recursion - to pass official suite :)
-            code.push("if (" + varName + " !== undefined) self(" + varName + ",this);");
-            return;
-        }
-        Object.defineProperty(schema, "$$visited", {value: true, enumerable: false, configurable: true});
-
-        if (schema.$ref) {
-            step(resolveRef(options.loader || defaultLoader, schemaRoot, schema.$ref), varName, opts);
-            return;
-        }
-
         function callback(attr) {
-            var noCodeAdded = code.length + 1, label = "label" + labelCount++;
-            code.push(label +": {");
+            var noCodeAdded = code.length + 1, clabel = "label" + labelCount++;
+            code.push(clabel + ": {");
             matchFns(schema, attr, function (s, name) {
-                addFn(s, name, varName, schema, label);
+                addFn(s, name, varName, schema, clabel);
             });
             if (code.length === noCodeAdded) {
                 code.pop();
-            }
-            else {
+            } else {
                 code.push("}");
             }
         }
-        if (opts.path) {
-            code.push("ctx.push(" + opts.path + ", " + opts.parent + "," + varName + ")");
-            ctx.push(opts.path, opts.parentSchema, schema);
+
+        function withOptions(schemaPath, path, attr) {
+            return {parent: varName, parentSchema: schema, schemaPath: schemaPath, path: path || JSON.stringify(schemaPath), attr: attr};
         }
-
-
-        ["oneOf", "anyOf", "allOf", "not"].forEach(function (inner) {
-            if (schema[inner]) {
-                ctx.compile(schema[inner], inner);
+        function processAdditional(schemaProp, cbProp, idxvar, newvar) {
+            var stubSchema = {};
+            stubSchema[cbProp] = false;
+            if (schema[schemaProp] === false) {
+                step(stubSchema, newvar, withOptions("*", idxvar));
+            } else if (typeof schema[schemaProp] === 'object') {
+                step(schema[schemaProp], newvar, withOptions("*", idxvar));
+            } else {
+                stubSchema[cbProp] = "allowed";
+                step(stubSchema, newvar, withOptions("*", idxvar));
             }
-        });
-
-
-        if (opts.attr) {
-            callback(opts.attr);
         }
-        callback("start");
-        callback();
 
-        if (schema.properties || schema.additionalProperties || schema.patternProperties) {
+        function stepProperties() {
+            var propsVar, idxvar, newvar;
             if (!options.ignoreAdditionalItems) {
                 propsVar = createVar();
                 code.push(propsVar + " = {}");
@@ -319,7 +326,7 @@ function compile(userSchema, selectorCtor, options, path) {
                     if (!options.ignoreAdditionalItems) {
                         code.push(propsVar + "." + k + " = true");
                     }
-                    step(schema.properties[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema});
+                    step(schema.properties[k], newvar, withOptions(k));
                 }
             }
             if (!options.ignoreAdditionalItems) {
@@ -330,58 +337,92 @@ function compile(userSchema, selectorCtor, options, path) {
                 for (k in (schema.patternProperties || {})) {
                     if (schema.patternProperties.hasOwnProperty(k)) {
                         code.push("if (/" + k + "/.test(" + idxvar + ")) {");
-                        step(schema.patternProperties[k], newvar, {path: idxvar, parent: varName, parentSchema: schema});
+                        step(schema.patternProperties[k], newvar, withOptions(k, idxvar));
                         code.push(propsVar + "[" + idxvar + "] = true");
                         code.push("}");
                     }
                 }
                 code.push("if (!" + propsVar + "[" + idxvar + "]) {");
-                if (schema.additionalProperties === false) {
-                    step({additionalProperty: false}, newvar, {path: idxvar, parent: varName, parentSchema: schema});
-                } else if (typeof schema.additionalProperties === 'object') {
-                    step(schema.additionalProperties, newvar, {path: idxvar, parent: varName, parentSchema: schema});
-                } else {
-                    step({additionalProperty: "allowed"}, newvar, {path: idxvar, parent: varName, parentSchema: schema});
-                }
+                processAdditional("additionalProperties", "additionalProperty", idxvar, newvar);
                 code.push("}");
                 code.push("}");
             }
         }
-        if (schema.items || schema.additionalItems) {
+
+        function stepItems() {
+            var idxvar, newvar;
             if (!Array.isArray(schema.items)) {
                 idxvar = createVar();
                 code.push("for (" + idxvar + " = 0; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
                 newvar = createVar();
                 code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                step(schema.items, newvar, {attr: "item", path: idxvar, parent: varName, parentSchema: schema});
+                step(schema.items, newvar, withOptions("[]", idxvar, "item"));
                 code.push("}");
                 if (!options.ignoreSchemaOnly) {
                     code.push("if (schemaOnly) {");
-                    step(schema.items, 'nil', {attr: "item", path: "'[]'", parent: varName, parentSchema: schema});
+                    step(schema.items, 'nil', withOptions("[]", null, "item"));
                     code.push("}");
                 }
             } else {
                 for (k = 0; k < schema.items.length; k = k + 1) {
                     newvar = createVar();
                     code.push(newvar + " = " + varName + " ? " + varName + "[" + k + "] : undefined");
-                    step(schema.items[k], newvar, {path: "'" + k + "'", parent: varName, parentSchema: schema});
+                    step(schema.items[k], newvar, withOptions(k));
                 }
                 if (!options.ignoreAdditionalItems) {
                     idxvar = createVar();
                     code.push("for (" + idxvar + " = " + schema.items.length + "; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
                     newvar = createVar();
                     code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                    if (schema.additionalItems === false) {
-                        step({additionalItem: false}, newvar, {path:idxvar, parent: varName, parentSchema: schema});
-                    } else if (typeof schema.additionalItems === 'object') {
-                        step(schema.additionalItems, newvar, {path:idxvar, parent: varName, parentSchema: schema});
-                    } else {
-                        step({additionalItem: "allowed"}, newvar, {path:idxvar, parent: varName, parentSchema: schema});
-                    }
+                    processAdditional("additionalItems", "additionalItem", idxvar, newvar);
                     code.push("}");
                 }
             }
         }
+
+        if (schema.$$visited) {
+            //TODO: this is solution only for root recursion - to pass official suite :)
+            code.push("if (" + varName + " !== undefined) self(" + varName + ",ctx.path);");
+            return;
+        }
+        Object.defineProperty(schema, "$$visited", {value: true, enumerable: false, configurable: true});
+
+        if (schema.$ref) {
+            step(resolveRef(options.loader || defaultLoader, schemaRoot, schema.$ref), varName, opts);
+            return;
+        }
+
+        if (opts.path) {
+            code.push("ctx.push(" + opts.path + ", " + opts.parent + "," + varName + ")");
+            ctx.push(opts.schemaPath, opts.parentSchema, schema);
+        }
+
+        ["oneOf", "anyOf", "allOf", "not"].forEach(function (inner) {
+            if (schema[inner]) {
+                ctx.compile(schema[inner], inner);
+            }
+        });
+
+        if (opts.attr) {
+            callback(opts.attr);
+        }
+        callback("start");
+        callback();
+
+
+        perAttribute = [
+            ["properties", "additionalProperties", "patternProperties", stepProperties],
+            ["items", "additionalItems", stepItems]
+        ];
+        for (i = 0; i < perAttribute.length; i++) {
+            for (k = 0; k < perAttribute[i].length - 1; k++) {
+                if (schema[perAttribute[i][k]]) {
+                    perAttribute[i].pop()();
+                    break;
+                }
+            }
+        }
+
         callback("end");
         if (opts.attr) {
             callback(opts.attr + "-end");
@@ -401,23 +442,24 @@ function compile(userSchema, selectorCtor, options, path) {
     var fnbody = prettifyCode(code).map(function (line) {
         return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
     }).join("\n");
-    fnbody = ["var self; selector._f = function(val) { var nil = undefined, schemaOnly = val === undefined"]
-        .concat(vars).join(",") + ";\nctx.self=val;\n"
-        + fnbody
-        + "}; self = function (val) {" + (selector.reset ? "selector.reset();" : "") + "return selector._f(val) }; self.fn = selector._f; return self; ";
+    fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
+        .concat(vars).join(",") + ";\nctx.reset(path, val);" +
+            fnbody +
+            "}; self = function (val, path) {" + (selector.reset ? "selector.reset();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
     try {
         fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
-    }
-    catch (e) {
+    } catch (e) {
         console.error(fnbody);
         throw e;
     }
-    var co = new CurrentObject(path);
+    var co = new CurrentObject();
     var so = (selector.clone ? selector.clone() : selectorCtor());
     fnin = fnout(so, schemas, innerFns, co);
 
     return fnin;
 }
+
+
 
 module.exports = compile;
 
@@ -442,7 +484,46 @@ module.exports = {
     }
 };
 
-},{"./compiler":1,"./normalizer":3,"./v4validator":4}],3:[function(require,module,exports){
+},{"./compiler":1,"./normalizer":4,"./v4validator":5}],3:[function(require,module,exports){
+"use strict";
+
+module.exports = function messages(gettext) {
+    return {
+        "string": gettext("shall be a string"),
+        "null": gettext("shall be null"),
+        "minLength": gettext("shall have length at least %d"),
+        "maxLength": gettext("shall have length no more than %d"),
+        "pattern": gettext("shall match pattern %s"),
+        "integer": gettext("shall be an integer"),
+        "multipleOf": gettext("shall be multiple of %d"),
+        "number": gettext("shall be a number"),
+        "minimum": gettext("shall be >= %d"),
+        "minimum.exclusive": gettext("shall be > %d"),
+        "maximum": gettext("shall be <= %d"),
+        "maximum.exclusive": gettext("shall be < %d"),
+        "boolean": gettext("shall be boolean"),
+        "object": gettext("shall be object"),
+        "additionalProperties": gettext("shall not have additional properties"),
+        "minProperties": gettext("shall have at least %d properties"),
+        "maxProperties": gettext("shall have no more than %d properties"),
+        "array": gettext("shall be array"),
+        "additionalItems": gettext("shall not have additional items"),
+        "minItems": gettext("shall have at least %d items"),
+        "maxItems": gettext("shall have no more %d items"),
+        "uniqueItems": gettext("shall have unique items"),
+        "enum": gettext("shall be one of values %s"),
+        "required": gettext("is required"),
+        "dependency": gettext("does not meet additional requirements for %s"),
+        "not": gettext("does not meet 'not' requirement"),
+        "oneOf": gettext("does not meet exactly one requirement"),
+        "oneOf.zero": gettext("does not meet any requirement"),
+        "allOf": gettext("does not meet all requirements"),
+        "anyOf": gettext("does not meet any requirement"),
+        "custom": gettext("is not valid")
+    };
+}
+
+},{}],4:[function(require,module,exports){
 "use strict";
 
 function Normalizer() {
@@ -494,44 +575,9 @@ Normalizer.factory = function() {
     return new Normalizer();
 };
 module.exports = Normalizer;
-},{}],4:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 "use strict";
-
-function messages(gettext) {
-    return {
-        "type.string": gettext("shall be a string"),
-        "type.null": gettext("shall be null"),
-        "type.string.minLength": gettext("shall have length at least %d"),
-        "type.string.maxLength": gettext("shall have length no more than %d"),
-        "type.string.pattern": gettext("shall match pattern %s"),
-        "type.integer": gettext("shall be an integer"),
-        "type.integer.multipleOf": gettext("shall be multiple of %d"),
-        "type.number": gettext("shall be a number"),
-        "type.number.minimum": gettext("shall be >= %d"),
-        "type.number.minimum.exclusive": gettext("shall be > %d"),
-        "type.number.maximum": gettext("shall be <= %d"),
-        "type.number.maximum.exclusive": gettext("shall be < %d"),
-        "type.boolean": gettext("shall be boolean"),
-        "type.object": gettext("shall be object"),
-        "type.object.required": gettext("is required"),
-        "type.object.additionalProperties": gettext("shall not have additional properties"),
-        "type.object.minProperties": gettext("shall have at least %d properties"),
-        "type.object.maxProperties": gettext("shall have no more than %d properties"),
-        "type.array": gettext("shall be array"),
-        "type.array.additionalItems": gettext("shall not have additional items"),
-        "type.array.minItems": gettext("shall have at least %d items"),
-        "type.array.maxItems": gettext("shall have no more %d items"),
-        "type.array.uniqueItems": gettext("shall have unique items"),
-        "type.enum": gettext("shall be one of values %s"),
-        "required": gettext("is required"),
-        "dependency": gettext("does not meet additional requirements for %s"),
-        "not": gettext("does not meet 'not' requirement"),
-        "oneOf": gettext("does not meet exactly one requirement"),
-        "oneOf.zero": gettext("does not meet any requirement"),
-        "allOf": gettext("does not meet all requirements"),
-        "anyOf": gettext("does not meet any requirement")
-    };
-}
+var messages = require('./messages');
 
 function isObject(o) {
     return typeof o === 'object' && !Array.isArray(o) && o !== null;
@@ -566,9 +612,13 @@ function fillDefaultFormats(formats) {
 
 function V4Validator(options) {
     this.options = options || {};
-    if (!this.options.messages) {
-        this.options.messages = messages(this.options.gettext || function (s) { return s; });
+    if (!this.options.gettext) {
+        this.options.gettext = function (s) { return s; };
     }
+    if (!this.options.messages) {
+        this.options.messages = messages(this.options.gettext);
+    }
+    this.custom = this.options.custom || {};
     this.formats = this.options.formats || {};
     fillDefaultFormats(this.formats);
     this.errors = [];
@@ -583,52 +633,58 @@ V4Validator.prototype = {
         return typeof o === 'object' ? JSON.stringify(o) : o;
     },
     error: function (code, ctx, arg, subpath) {
+        var msg = this.$cm ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
+        delete this.$cm;
         this.errors.push({
             code: code,
-            message: this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }()),
+            message: msg,
             value: ctx.self,
             arg: arg,
-            path: ctx.path.join(".") + (subpath ? "." + subpath : "")
+            path: ctx.path.slice()
         });
     },
     errorIf: function (condition, code, ctx, arg, subpath) {
         if (condition) {
-            this.errors.push({
-                code: code,
-                message: this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }()),
-                value: ctx.self,
-                arg: arg,
-                path: ctx.path.join(".") + (subpath ? "." + subpath : "")
-            });
+            this.error(code, ctx, arg, subpath);
         }
     },
     copyErrors: function (anotherErrors) {
         this.errors.splice.apply(this.errors, [this.errors.length, 0].concat(anotherErrors));
     },
+
+    "[messages]": function (s, ctx) {
+        this.$messages = this.$messages || [];
+        this.$messages.push(s.messages);
+        return {inline: "this.$cm = this.$messages[" + (this.$messages.length - 1) + "]"};
+    },
+
+    ////////////// type & common
+
+
     "[^required]": {prepare: function (s, ctx) {
         if (!ctx.parent) return null;
         return {inline: "if (_ === undefined) ctx.stop()"};
     }},
     "[type=string]": {inline: function (_, ctx) {
-        if(typeof _ !== 'string') this.error('type.string', ctx);
+        if(typeof _ !== 'string') this.error('string', ctx);
     }},
     "[type=number]": {inline: function (_, ctx) {
-        if(typeof _ !== 'number') this.error('type.number', ctx);
+        if(typeof _ !== 'number') this.error('number', ctx);
     }},
     "[type=integer]": {inline: function (_, ctx) {
-        if((typeof _ !== 'number') || (_ % 1 !== 0)) this.error('type.integer', ctx);
+        if((typeof _ !== 'number') || (_ % 1 !== 0)) this.error('integer', ctx);
     }},
     "[type=null]": {inline: function (_, ctx) {
-        if(_ !== null) this.error('type.null', ctx);
+        if(_ !== null) this.error('null', ctx);
     }},
     "[type=boolean]": {inline: function (_, ctx) {
-        if(typeof _ !== 'boolean') this.error('type.boolean', ctx);
+        if(typeof _ !== 'boolean') this.error('boolean', ctx);
     }},
     "[type=array]": {inline: function (_, ctx) {
-        if(!Array.isArray(_)) this.error('type.array', ctx);
+        if(!Array.isArray(_)) this.error('array', ctx);
     }},
     "[type=object]": {inline: function (_, ctx) {
-        if(Array.isArray(_) || typeof _ !== 'object' || _ === null) this.error('type.object', ctx);
+        if(Array.isArray(_) || typeof _ !== 'object' || _ === null) this.error('object', ctx);
     }},
     "[type]": function (schema) {
         if (Array.isArray(schema.type)) {
@@ -680,7 +736,7 @@ V4Validator.prototype = {
 
     "[allOf]": {inline: function (_, ctx) {
         for (var i = 0; i < ctx.allOf.length; i++) {
-            var res = ctx.allOf[i](_);
+            var res = ctx.allOf[i](_, ctx.path);
 
             if (!res.valid) {
                 this.error("allOf", ctx);
@@ -692,7 +748,7 @@ V4Validator.prototype = {
     "[anyOf]": {inline: function (_, ctx) {
         var allErrors = [], res;
         for (var i = 0; i < ctx.anyOf.length; i++) {
-            res = ctx.anyOf[i](_);
+            res = ctx.anyOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
             if (res.valid) break;
         }
@@ -705,7 +761,7 @@ V4Validator.prototype = {
     "[oneOf]": {inline: function (_, ctx) {
         var count = 0, allErrors = [], res;
         for (var i = 0; i < ctx.oneOf.length; i++) {
-            res = ctx.oneOf[i](_);
+            res = ctx.oneOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
             if (res.valid) count++;
         }
@@ -719,7 +775,7 @@ V4Validator.prototype = {
     }},
 
     "[not]": {inline: function (_, ctx) {
-        var res = ctx.not(_);
+        var res = ctx.not(_, ctx.path);
         if (res.valid) {
             this.error("not", ctx);
         }
@@ -735,44 +791,50 @@ V4Validator.prototype = {
             $enum[this.toComparable(e)] = 1;
         }
         this.$enums.push($enum);
-        return {inline: "if(!this.$enums[" + (this.$enums.length-1) + "][this.toComparable(_)]) this.error('type.enum', ctx, " + JSON.stringify(schema.enum) + ")"};
+        return {inline: "if(!this.$enums[" + (this.$enums.length-1) + "][this.toComparable(_)]) this.error('enum', ctx, " + JSON.stringify(schema.enum) + ")"};
     },
 
     //////////////// string
 
+    "xLength": function (op, count, code) {
+        return {inline: "if (typeof _ === 'string' && _.length " + op + count + ") this.error('" + code + "', ctx, " + count + ")"}
+    },
+
     "[maxLength]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && _.length > " + schema.maxLength + ") this.error('type.string.maxLength', ctx, " + schema.maxLength + ")"}
+        return this.xLength(">", schema.maxLength, 'maxLength');
     },
     "[minLength]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && _.length < " + schema.minLength + ") this.error('type.string.minLength', ctx, " + schema.minLength + ")"}
+        return this.xLength("<", schema.minLength, 'minLength');
     },
     "[pattern]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('type.string.pattern', ctx, " + JSON.stringify(schema.pattern) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('pattern', ctx, " + JSON.stringify(schema.pattern) + ")"}
     },
     "[format]": function (schema) {
         var fmt = this.formats[schema.format];
         if (!fmt) {
             throw new Error("Unknown format '" + schema.format + "'. Did you forget to register it?");
         }
-        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('type.string.format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"}
     },
 
     ////////////////// array
 
     "[additionalItem=false]": {inline: function (_, ctx) {
-        this.error("type.array.additionalItems", ctx);
+        this.error("additionalItems", ctx);
     }},
 
-    "[minItems]": function (schema) {
+    "xItems": function (op, count, code) {
         return {
-            inline: "if(Array.isArray(_) && _.length < " + schema.minItems + ") this.error('type.array.minItems', ctx)"
+            inline: "if(Array.isArray(_) && _.length " + op + count + ") this.error('" + code + "', ctx)"
         }
     },
 
+    "[minItems]": function (schema) {
+        return this.xItems("<", schema.minItems, "minItems");
+    },
+
     "[maxItems]": function (schema) {
-        return {
-            inline: "if(Array.isArray(_) && _.length > " + schema.maxItems + ") this.error('type.array.maxItems', ctx)"
-        }
+        return this.xItems(">", schema.maxItems, "maxItems");
     },
 
     "[uniqueItems]": {inline: function (_, ctx) {
@@ -783,23 +845,27 @@ V4Validator.prototype = {
         var its = {}, i, o;
         for (i = 0; i < _.length; i = i + 1) {
             o = this.toComparable(_[i]);
-            this.errorIf(its[o], "type.array.uniqueItems", ctx, _[i]);
+            this.errorIf(its[o], "uniqueItems", ctx, _[i]);
             its[o] = true;
         }
     }},
 
-    ///////////////// object
-    "[required][^properties]": function (schema) {
-        var reqs = schema.required;
+    processRequired: function(reqs) {
         if (Array.isArray(reqs)) {
             return function (s, o, ctx) {
                 if (!isObject(o)) return;
                 var i;
                 for (i = 0; i < reqs.length; i++) {
-                    this.errorIf(!o.hasOwnProperty(reqs[i]), "type.object.required", ctx, null, reqs[i]);
+                    this.errorIf(!o.hasOwnProperty(reqs[i]), "required", ctx, null, reqs[i]);
                 }
             }
         }
+    },
+
+    ///////////////// object
+    "[required][^properties]": function (schema) {
+        return this.processRequired(schema.required);
+
     },
 
     "[properties]": function (schema) {
@@ -807,40 +873,59 @@ V4Validator.prototype = {
         var reqs = (schema.required || []).concat(schema.$keys.filter(function (key) {
             return schema.properties[key].required === true;
         }));
-        if (reqs.length > 0) {
-            return function (s, o, ctx) {
-                if (!isObject(o)) return;
-                var i;
-                for (i = 0; i < reqs.length; i++) {
-                    this.errorIf(!o.hasOwnProperty(reqs[i]), "type.object.required", ctx, null, reqs[i]);
-                }
-            }
-        }
+        return this.processRequired(reqs);
+    },
+
+    "xProperties": function (op, count, code) {
+        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length " + op + " " + count + ", '" + code + "', ctx, " + count + ")"};
     },
 
     "[maxProperties]": function (schema) {
-        var count = schema.maxProperties;
-        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length > " + count + ", 'type.object.maxProperties', ctx, " + count + ")"}
+        return this.xProperties(">", schema.maxProperties, 'maxProperties');
     },
 
     "[minProperties]": function (schema) {
-        var count = schema.minProperties;
-        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length < " + count + ", 'type.object.minProperties', ctx, " + count + ")"}
+        return this.xProperties("<", schema.minProperties, 'minProperties');
     },
 
     "[additionalProperty=false]": {inline: function (_, ctx) {
-        this.error("type.object.additionalProperties", ctx);
+        this.error("additionalProperties", ctx);
     }},
 
     ///////////////// number
     "[multipleOf]": function (schema) {
-        return {inline: "if (typeof _ === 'number' ) this.errorIf((_ / " + schema.multipleOf + ") % 1 !== 0, 'type.integer.multipleOf', ctx, " + schema.multipleOf + ")" }
+        return {inline: "if (typeof _ === 'number' ) this.errorIf((_ / " + schema.multipleOf + ") % 1 !== 0, 'multipleOf', ctx, " + schema.multipleOf + ")" }
+    },
+
+    "ximum": function (op, excl, count, code) {
+        return {inline: "this.errorIf(_ " + op +  (excl ? "=" : "") + count + ", '" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"}
     },
     "[minimum]": function (schema) {
-        return {inline: "this.errorIf(_ " + (schema.exclusiveMinimum ? "<=" : "<") + schema.minimum + ", 'type.number.minimum" + (schema.exclusiveMinimum ? ".exclusive" : "") + "', ctx, " + schema.minimum + ")"}
+        return this.ximum("<", schema.exclusiveMinimum, schema.minimum, 'minimum');
     },
     "[maximum]": function (schema) {
-        return {inline: "this.errorIf(_ " + (schema.exclusiveMaximum ? ">=" : ">") + schema.maximum + ", 'type.number.maximum" + (schema.exclusiveMaximum ? ".exclusive" : "") + "', ctx, " + schema.maximum + ")"}
+        return this.ximum(">", schema.exclusiveMaximum, schema.maximum, 'maximum');
+    },
+
+    ///////////////// custom
+    "[conform]": function (schema, ctx) {
+        this.$custom = this.$custom || [];
+        if (typeof schema.conform === 'function') {
+            this.$custom.push(schema.conform);
+            return {inline: "this.errorIf(!this.$custom[" + (this.$custom.length - 1) + "](_, ctx), 'custom', ctx)"}
+        }
+        else {
+            var inlines = [];
+            for (var k in schema.conform) {
+                if (schema.conform.hasOwnProperty(k)) {
+                    var fn = this.custom[k];
+                    var args = schema.conform[k].map(JSON.stringify).concat([""]).join(',');
+                    this.$custom.push(fn);
+                    inlines.push("this.errorIf(!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx), 'custom." + k + "', ctx, this.options.messages.custom)");
+                }
+            }
+            return {inline: inlines.join('\n')};
+        }
     },
 
     ///////////////// result
@@ -853,12 +938,15 @@ V4Validator.prototype = {
     clone: function () {
         var v = new V4Validator(this.options);
         v.$enums = this.$enums;
+        v.$custom = this.$custom;
+        v.$messages = this.$messages;
         return v;
     },
 
     reset: function () {
         this.errors = this.res.errors = [];
         this.res.valid = true;
+        delete this.$cm;
     }
 
 };
@@ -871,5 +959,5 @@ V4Validator.factory = function (options) {
 
 
 module.exports = V4Validator;
-},{}]},{},[2])(2)
+},{"./messages":3}]},{},[2])(2)
 });
