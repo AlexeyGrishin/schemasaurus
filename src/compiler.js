@@ -1,7 +1,4 @@
 "use strict";
-function clone(o) {
-    return JSON.parse(JSON.stringify(o));
-}
 
 function CurrentObject(path) {
     this.path = path ? path.slice() : [];
@@ -11,6 +8,7 @@ function CurrentObject(path) {
     this.property = null;
     this.self = null;
 }
+
 CurrentObject.prototype = {
     reset: function (path, self) {
         this.path = path ? path.slice() : [];

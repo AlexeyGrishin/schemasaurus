@@ -253,11 +253,15 @@ V4Validator.prototype = {
 
     //////////////// string
 
+    "xLength": function (op, count, code) {
+        return {inline: "if (typeof _ === 'string' && _.length " + op + count + ") this.error('" + code + "', ctx, " + count + ")"}
+    },
+
     "[maxLength]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && _.length > " + schema.maxLength + ") this.error('maxLength', ctx, " + schema.maxLength + ")"}
+        return this.xLength(">", schema.maxLength, 'maxLength');
     },
     "[minLength]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && _.length < " + schema.minLength + ") this.error('minLength', ctx, " + schema.minLength + ")"}
+        return this.xLength("<", schema.minLength, 'minLength');
     },
     "[pattern]": function (schema) {
         return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('pattern', ctx, " + JSON.stringify(schema.pattern) + ")"}
@@ -276,16 +280,18 @@ V4Validator.prototype = {
         this.error("additionalItems", ctx);
     }},
 
-    "[minItems]": function (schema) {
+    "xItems": function (op, count, code) {
         return {
-            inline: "if(Array.isArray(_) && _.length < " + schema.minItems + ") this.error('minItems', ctx)"
+            inline: "if(Array.isArray(_) && _.length " + op + count + ") this.error('" + code + "', ctx)"
         }
     },
 
+    "[minItems]": function (schema) {
+        return this.xItems("<", schema.minItems, "minItems");
+    },
+
     "[maxItems]": function (schema) {
-        return {
-            inline: "if(Array.isArray(_) && _.length > " + schema.maxItems + ") this.error('maxItems', ctx)"
-        }
+        return this.xItems(">", schema.maxItems, "maxItems");
     },
 
     "[uniqueItems]": {inline: function (_, ctx) {
@@ -301,9 +307,7 @@ V4Validator.prototype = {
         }
     }},
 
-    ///////////////// object
-    "[required][^properties]": function (schema) {
-        var reqs = schema.required;
+    processRequired: function(reqs) {
         if (Array.isArray(reqs)) {
             return function (s, o, ctx) {
                 if (!isObject(o)) return;
@@ -315,30 +319,30 @@ V4Validator.prototype = {
         }
     },
 
+    ///////////////// object
+    "[required][^properties]": function (schema) {
+        return this.processRequired(schema.required);
+
+    },
+
     "[properties]": function (schema) {
         schema.$keys = Object.keys(schema.properties);
         var reqs = (schema.required || []).concat(schema.$keys.filter(function (key) {
             return schema.properties[key].required === true;
         }));
-        if (reqs.length > 0) {
-            return function (s, o, ctx) {
-                if (!isObject(o)) return;
-                var i;
-                for (i = 0; i < reqs.length; i++) {
-                    this.errorIf(!o.hasOwnProperty(reqs[i]), "required", ctx, null, reqs[i]);
-                }
-            }
-        }
+        return this.processRequired(reqs);
+    },
+
+    "xProperties": function (op, count, code) {
+        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length " + op + " " + count + ", '" + code + "', ctx, " + count + ")"};
     },
 
     "[maxProperties]": function (schema) {
-        var count = schema.maxProperties;
-        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length > " + count + ", 'maxProperties', ctx, " + count + ")"}
+        return this.xProperties(">", schema.maxProperties, 'maxProperties');
     },
 
     "[minProperties]": function (schema) {
-        var count = schema.minProperties;
-        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length < " + count + ", 'minProperties', ctx, " + count + ")"}
+        return this.xProperties("<", schema.minProperties, 'minProperties');
     },
 
     "[additionalProperty=false]": {inline: function (_, ctx) {
@@ -349,11 +353,15 @@ V4Validator.prototype = {
     "[multipleOf]": function (schema) {
         return {inline: "if (typeof _ === 'number' ) this.errorIf((_ / " + schema.multipleOf + ") % 1 !== 0, 'multipleOf', ctx, " + schema.multipleOf + ")" }
     },
+
+    "ximum": function (op, excl, count, code) {
+        return {inline: "this.errorIf(_ " + op +  (excl ? "=" : "") + count + ", '" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"}
+    },
     "[minimum]": function (schema) {
-        return {inline: "this.errorIf(_ " + (schema.exclusiveMinimum ? "<=" : "<") + schema.minimum + ", 'minimum" + (schema.exclusiveMinimum ? ".exclusive" : "") + "', ctx, " + schema.minimum + ")"}
+        return this.ximum("<", schema.exclusiveMinimum, schema.minimum, 'minimum');
     },
     "[maximum]": function (schema) {
-        return {inline: "this.errorIf(_ " + (schema.exclusiveMaximum ? ">=" : ">") + schema.maximum + ", 'maximum" + (schema.exclusiveMaximum ? ".exclusive" : "") + "', ctx, " + schema.maximum + ")"}
+        return this.ximum(">", schema.exclusiveMaximum, schema.maximum, 'maximum');
     },
 
     ///////////////// custom
