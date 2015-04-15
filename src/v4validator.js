@@ -54,7 +54,7 @@ V4Validator.prototype = {
     toComparable: function (o) {
         return typeof o === 'object' ? JSON.stringify(o) : o;
     },
-    error: function (code, ctx, arg, subpath) {
+    error: function (code, ctx, arg) {
         var msg = this.$cm ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
         delete this.$cm;
         this.errors.push({
@@ -65,16 +65,11 @@ V4Validator.prototype = {
             path: ctx.path.slice()
         });
     },
-    errorIf: function (condition, code, ctx, arg, subpath) {
-        if (condition) {
-            this.error(code, ctx, arg, subpath);
-        }
-    },
     copyErrors: function (anotherErrors) {
         this.errors.splice.apply(this.errors, [this.errors.length, 0].concat(anotherErrors));
     },
 
-    "[messages]": function (s, ctx) {
+    "[messages]": function (s) {
         this.$messages = this.$messages || [];
         this.$messages.push(s.messages);
         return {inline: "this.$cm = this.$messages[" + (this.$messages.length - 1) + "]"};
@@ -84,29 +79,45 @@ V4Validator.prototype = {
 
 
     "[^required]": {prepare: function (s, ctx) {
-        if (!ctx.parent) return null;
+        if (!ctx.parent) {
+            return null;
+        }
         return {inline: "if (_ === undefined) ctx.stop()"};
     }},
     "[type=string]": {inline: function (_, ctx) {
-        if(typeof _ !== 'string') this.error('string', ctx);
+        if (typeof _ !== 'string') {
+            this.error('string', ctx);
+        }
     }},
     "[type=number]": {inline: function (_, ctx) {
-        if(typeof _ !== 'number') this.error('number', ctx);
+        if (typeof _ !== 'number') {
+            this.error('number', ctx);
+        }
     }},
     "[type=integer]": {inline: function (_, ctx) {
-        if((typeof _ !== 'number') || (_ % 1 !== 0)) this.error('integer', ctx);
+        if ((typeof _ !== 'number') || (_ % 1 !== 0)) {
+            this.error('integer', ctx);
+        }
     }},
     "[type=null]": {inline: function (_, ctx) {
-        if(_ !== null) this.error('null', ctx);
+        if (_ !== null) {
+            this.error('null', ctx);
+        }
     }},
     "[type=boolean]": {inline: function (_, ctx) {
-        if(typeof _ !== 'boolean') this.error('boolean', ctx);
+        if (typeof _ !== 'boolean') {
+            this.error('boolean', ctx);
+        }
     }},
     "[type=array]": {inline: function (_, ctx) {
-        if(!Array.isArray(_)) this.error('array', ctx);
+        if (!Array.isArray(_)) {
+            this.error('array', ctx);
+        }
     }},
     "[type=object]": {inline: function (_, ctx) {
-        if(Array.isArray(_) || typeof _ !== 'object' || _ === null) this.error('object', ctx);
+        if (Array.isArray(_) || typeof _ !== 'object' || _ === null) {
+            this.error('object', ctx);
+        }
     }},
     "[type]": function (schema) {
         if (Array.isArray(schema.type)) {
@@ -267,7 +278,9 @@ V4Validator.prototype = {
         var its = {}, i, o;
         for (i = 0; i < _.length; i = i + 1) {
             o = this.toComparable(_[i]);
-            this.errorIf(its[o], "uniqueItems", ctx, _[i]);
+            if (its[o]) {
+                this.error("uniqueItems", ctx, _[i]);
+            }
             its[o] = true;
         }
     }},
@@ -278,7 +291,10 @@ V4Validator.prototype = {
                 if (!isObject(o)) return;
                 var i;
                 for (i = 0; i < reqs.length; i++) {
-                    this.errorIf(!o.hasOwnProperty(reqs[i]), "required", ctx, null, reqs[i]);
+                    if (!o.hasOwnProperty(reqs[i])) {
+                        this.error("required", ctx, null, reqs[i]);
+                    }
+
                 }
             }
         }
@@ -291,15 +307,15 @@ V4Validator.prototype = {
     },
 
     "[properties]": function (schema) {
-        schema.$keys = Object.keys(schema.properties);
-        var reqs = (schema.required || []).concat(schema.$keys.filter(function (key) {
+        var $keys = Object.keys(schema.properties);
+        var reqs = (schema.required || []).concat($keys.filter(function (key) {
             return schema.properties[key].required === true;
         }));
         return this.processRequired(reqs);
     },
 
     "xProperties": function (op, count, code) {
-        return {inline: "if (typeof _ === 'object') this.errorIf(Object.keys(_).length " + op + " " + count + ", '" + code + "', ctx, " + count + ")"};
+        return {inline: "if (typeof _ === 'object' && Object.keys(_).length " + op + " " + count + ") this.error('" + code + "', ctx, " + count + ")"};
     },
 
     "[maxProperties]": function (schema) {
@@ -316,11 +332,11 @@ V4Validator.prototype = {
 
     ///////////////// number
     "[multipleOf]": function (schema) {
-        return {inline: "if (typeof _ === 'number' ) this.errorIf((_ / " + schema.multipleOf + ") % 1 !== 0, 'multipleOf', ctx, " + schema.multipleOf + ")" }
+        return {inline: "if (typeof _ === 'number' && (_ / " + schema.multipleOf + ") % 1 !== 0) this.error('multipleOf', ctx, " + schema.multipleOf + ")" }
     },
 
     "ximum": function (op, excl, count, code) {
-        return {inline: "this.errorIf(_ " + op +  (excl ? "=" : "") + count + ", '" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"}
+        return {inline: "if (_ " + op +  (excl ? "=" : "") + count + ") this.error('" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"}
     },
     "[minimum]": function (schema) {
         return this.ximum("<", schema.exclusiveMinimum, schema.minimum, 'minimum');
@@ -334,7 +350,7 @@ V4Validator.prototype = {
         this.$custom = this.$custom || [];
         if (typeof schema.conform === 'function') {
             this.$custom.push(schema.conform);
-            return {inline: "this.errorIf(!this.$custom[" + (this.$custom.length - 1) + "](_, ctx), 'custom', ctx)"}
+            return {inline: "if (!this.$custom[" + (this.$custom.length - 1) + "](_, ctx)) this.error('custom', ctx)"}
         }
         else {
             var inlines = [];
@@ -343,7 +359,7 @@ V4Validator.prototype = {
                     var fn = this.custom[k];
                     var args = schema.conform[k].map(JSON.stringify).concat([""]).join(',');
                     this.$custom.push(fn);
-                    inlines.push("this.errorIf(!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx), 'custom." + k + "', ctx, this.options.messages.custom)");
+                    inlines.push("if (!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx)) this.error('custom." + k + "', ctx, this.options.messages.custom)");
                 }
             }
             return {inline: inlines.join('\n')};

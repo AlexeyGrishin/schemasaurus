@@ -13,9 +13,6 @@ CurrentObject.prototype = {
     reset: function (path, self) {
         this.path = path ? path.slice() : [];
         this.self = self;
-        this.si = 0;
-        this.parent = null;
-        this.property = null;
     },
     replace: function (newVal) {
         this.parent[this.property] = newVal;
