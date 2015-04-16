@@ -357,7 +357,7 @@ V4Validator.prototype = {
             for (var k in schema.conform) {
                 if (schema.conform.hasOwnProperty(k)) {
                     var fn = this.custom[k];
-                    var args = schema.conform[k].map(JSON.stringify).concat([""]).join(',');
+                    var args = schema.conform[k] === true ? "" : schema.conform[k].map(JSON.stringify).concat([""]).join(',');
                     this.$custom.push(fn);
                     inlines.push("if (!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx)) this.error('custom." + k + "', ctx, this.options.messages.custom)");
                 }
@@ -368,31 +368,53 @@ V4Validator.prototype = {
 
     ///////////////// result
 
-    done: {inline: function () {
+    end: {inline: function () {
         this.res.valid = this.errors.length === 0;
         return this.res;
     }},
 
     clone: function () {
-        var v = new V4Validator(this.options);
+        var v = new this.constructor(this.options);
         v.$enums = this.$enums;
         v.$custom = this.$custom;
         v.$messages = this.$messages;
         return v;
     },
 
-    reset: function () {
+    begin: function () {
         this.errors = this.res.errors = [];
         this.res.valid = true;
         delete this.$cm;
     }
 
 };
+V4Validator.prototype.constructor = V4Validator;
 
 V4Validator.factory = function (options) {
     return function () {
         return new V4Validator(options);
     }
+};
+
+V4Validator.extend = function (override) {
+    function NewValidator (options) {
+        V4Validator.call(this, options);
+    }
+
+    NewValidator.prototype = new V4Validator();
+    NewValidator.prototype.constructor = NewValidator;
+    for (var k in override) {
+        if (override.hasOwnProperty(k)) {
+            NewValidator.prototype[k] = override[k];
+        }
+    }
+    NewValidator.factory = function (options) {
+        return function () {
+            return new NewValidator(options);
+        }
+    };
+
+    return NewValidator;
 };
 
 

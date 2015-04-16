@@ -156,10 +156,18 @@ function convertMatcher(expr, selector) {
     }
 }
 
+function toFactory(ctor) {
+    if (Object.keys(ctor.prototype).length !== 0) {
+        return function () { return new ctor(); };
+    }
+    return ctor;
+}
+
 function compile(userSchema, selectorCtor, options, path) {
     if (!selectorCtor || typeof selectorCtor !== 'function') {
         throw new Error("selectorCtor shall be a function");
     }
+    selectorCtor = toFactory(selectorCtor);
     options = options || {};
     options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false : options.ignoreAdditionalItems;
 
@@ -431,8 +439,8 @@ function compile(userSchema, selectorCtor, options, path) {
     }
 
     step(schema, "val");
-    if (selector.done) {
-        addFn(selector.done, "done", "val", schema, null, true);
+    if (selector.end) {
+        addFn(selector.end, "end", "val", schema, null, true);
     }
 
     var fnbody = prettifyCode(code).map(function (line) {
@@ -441,7 +449,7 @@ function compile(userSchema, selectorCtor, options, path) {
     fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
         .concat(vars).join(",") + ";\nctx.reset(path, val);" +
             fnbody +
-            "}; self = function (val, path) {" + (selector.reset ? "selector.reset();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
+            "}; self = function (val, path) {" + (selector.begin ? "selector.begin();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
     try {
         fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
     } catch (e) {

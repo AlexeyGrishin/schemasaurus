@@ -13,7 +13,7 @@ describe("iterator", function () {
         var selector = factory({
             "[a]": function() { this.called = "a";},
             "[b]": function() { this.called = "b";},
-            done: function() { return this.called; }
+            end: function() { return this.called; }
         });
         expect(compile({a: 10}, selector)()).to.eql("a");
         expect(compile({b: 10}, selector)()).to.eql("b");
@@ -23,7 +23,7 @@ describe("iterator", function () {
         var selector = factory({
             "[a=1]": function () { this.called = "1"; },
             "[a=2]": function () { this.called = "2"; },
-            done: function() { return this.called; }
+            end: function() { return this.called; }
         });
         expect(compile({a: 1}, selector)()).to.eql("1");
         expect(compile({a: 2}, selector)()).to.eql("2");
@@ -33,7 +33,7 @@ describe("iterator", function () {
         var selector = factory({
             called: 0,
             "[some]": function () { this.called++; },
-            done: function() { return this.called; }
+            end: function() { return this.called; }
         });
         expect(compile({
             some: 10,
@@ -54,7 +54,7 @@ describe("iterator", function () {
             ":start": function () { this.called.push(":start"); },
             ":end": function () { this.called.push(":end"); },
             "[type=object]": function () { this.called.push("object"); },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({type: "object", properties: {}}, selector)({})).to.eql([
             ":start", "object", ":end"
@@ -67,7 +67,7 @@ describe("iterator", function () {
             ":start": function () { this.called.push(":start"); },
             ":end": function () { this.called.push(":end"); },
             "[type=array]": function () { this.called.push("array"); },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({type: "array", items: {}}, selector)([])).to.eql([
             ":start", "array", ":end"
@@ -82,7 +82,7 @@ describe("iterator", function () {
             ":item": function () { this.called.push(":item"); },
             ":item-end": function () { this.called.push(":item-end"); },
             "[type=string]": function (s, o, c) { this.called.push("item " + o); },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({type: "array", items: {type: "string"}}, selector)(["a", "b"])).to.eql([
             ":start", ":item", "item a", ":item-end", ":item", "item b", ":item-end", ":end"
@@ -92,7 +92,7 @@ describe("iterator", function () {
     it("shall react on property absence", function () {
         var selector = factory({
             "[^a]": function () { this.called = "!a"; },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({b: 10}, selector)()).to.eql("!a");
         delete selector().called;
@@ -101,7 +101,7 @@ describe("iterator", function () {
     it("shall react on property non-equality", function () {
         var selector = factory({
             "[^a=3]": function () { this.called = "!a"; },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({a: 4}, selector)()).to.eql("!a");
         delete selector().called;
@@ -112,7 +112,7 @@ describe("iterator", function () {
         var selector = factory({
             "[a]": function (s, o, c) { this.called = "a"; c.stop(); },
             "[b]": function (s, o, c) { this.called = "b"; },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({a: 1, b: 2}, selector)()).to.eql("a");
     });
@@ -120,7 +120,7 @@ describe("iterator", function () {
     it("shall provide correct path for objects", function () {
         var selector = factory({
             "[a]": function (s, o, c) { this.called = c.path.slice(); },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({properties: {
             p1: {properties: {
@@ -132,7 +132,7 @@ describe("iterator", function () {
     it("shall provide correct path for arrays", function () {
         var selector = factory({
             "[a]": function (s, o, c) { this.called = c.path.slice(); },
-            done: function () { return this.called; }
+            end: function () { return this.called; }
         });
         expect(compile({properties: {
             p1: {
@@ -150,7 +150,7 @@ describe("iterator", function () {
                     return null;
                 },
                 clone: function () { return this; },
-                done: function () { return this.path; }
+                end: function () { return this.path; }
             });
             expect(compile({properties: {q: {properties: {w: {items: {a: 10}}}}}}, selector)()).to.eql(["q", "w", "[]"]);
         });

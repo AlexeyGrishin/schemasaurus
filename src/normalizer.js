@@ -42,7 +42,7 @@ Normalizer.prototype = {
                 break;
         }
     },
-    done: {inline: "return _"}
+    end: {inline: "return _"}
 };
 
 Normalizer.factory = function() {

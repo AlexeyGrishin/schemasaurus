@@ -31,7 +31,7 @@ describe("Official json schema tests suite", function() {
     suite.forEach(function(s) {
         describe(s.description + " [" + s.file + "]", function() {
             if (isIgnored(s.description)) return console.warn("  [IGNORED] " + s.description + ": *");
-            var fn = newValidator(s.schema, {noinline:true});
+            var fn = newValidator(s.schema, {noinline:false});
             s.tests.forEach(function(t) {
                 if (isIgnored(t.description)) return console.warn("  [IGNORED] " + s.description + ": " + t.description);
                 it(t.description, function() {
