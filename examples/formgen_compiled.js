@@ -29,14 +29,9 @@ FormGenerator.prototype = {
 
     "[type=array]:end": {inline: 'this.html += "</fieldset>"; '},
 
-    ":item": {inline: function (_, ctx) {
-        this.html += "<div id='" + this.path(ctx) + "'>";
-    }},
+    ":item": {inline: 'this.html += "<div id=\'" + this.path(ctx) + "\'>"'},
 
-    ":item-end": {inline: function (_, ctx) {
-        this.append("<button onclick='document.getElementById(\"" + this.path(ctx) + "\").remove();'>Delete</button>");
-        this.append("</div>");
-    }},
+    ":item-end": {inline: 'this.html += "<button onclick=\'document.getElementById(\" + this.path(ctx) + \").remove();\'>Delete</button></div>"'},
 
     select: function (values, selected, options) {
         this.html += "<select ";
@@ -57,9 +52,7 @@ FormGenerator.prototype = {
         ctx.stop();
     }},
 
-    "[type=string]": {inline: function (_, ctx) {
-        this.input('string', {value: _, name: this.path(ctx)});
-    }},
+    "[type=string]": {inline: "this.html += '<input type=string name=\"' + this.path(ctx) + '\" value= \"' + _ + '\"'"},
     "[required]": {inline: function (_, ctx) {
         this.html += " required ";
     }},
