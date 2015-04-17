@@ -157,10 +157,18 @@ function convertMatcher(expr, selector) {
     }
 }
 
+function toFactory(ctor) {
+    if (Object.keys(ctor.prototype).length !== 0) {
+        return function () { return new ctor(); };
+    }
+    return ctor;
+}
+
 function compile(userSchema, selectorCtor, options, path) {
     if (!selectorCtor || typeof selectorCtor !== 'function') {
         throw new Error("selectorCtor shall be a function");
     }
+    selectorCtor = toFactory(selectorCtor);
     options = options || {};
     options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false : options.ignoreAdditionalItems;
 
@@ -432,8 +440,8 @@ function compile(userSchema, selectorCtor, options, path) {
     }
 
     step(schema, "val");
-    if (selector.done) {
-        addFn(selector.done, "done", "val", schema, null, true);
+    if (selector.end) {
+        addFn(selector.end, "end", "val", schema, null, true);
     }
 
     var fnbody = prettifyCode(code).map(function (line) {
@@ -442,7 +450,7 @@ function compile(userSchema, selectorCtor, options, path) {
     fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
         .concat(vars).join(",") + ";\nctx.reset(path, val);" +
             fnbody +
-            "}; self = function (val, path) {" + (selector.reset ? "selector.reset();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
+            "}; self = function (val, path) {" + (selector.begin ? "selector.begin();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
     try {
         fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
     } catch (e) {
@@ -462,9 +470,38 @@ module.exports = compile;
 
 },{}],2:[function(require,module,exports){
 "use strict";
+module.exports = function interpolate(template, a, b, c, d, e, f, g) {
+    var list = template.split("%%"),
+        code;
+    if (a !== undefined) {
+        if (b === undefined) {
+            return list[0] + a + list[1];
+        }
+        if (c === undefined) {
+            return list[0] + a + list[1] + b + list[2];
+        }
+        if (d === undefined) {
+            return list[0] + a + list[1] + b + list[2] + c + list[3];
+        }
+        if (e === undefined) {
+            return list[0] + a + list[1] + b + list[2] + c + list[3] + d + list[4];
+        }
+        if (f === undefined) {
+            return list[0] + a + list[1] + b + list[2] + c + list[3] + d + list[4] + e + list[5];
+        }
+        if (g === undefined) {
+            return list[0] + a + list[1] + b + list[2] + c + list[3] + d + list[4] + e + list[5] + g + list[6];
+        }
+    }
+    code = "return " + ["list[0]", "a", "list[1]", "b", "list[2]", "c", "list[3]", "d", "list[4]", "e", "list[5]", "f", "list[6]", "g", "list[7]"].slice(0, list.length * 2 - 1).join("+");
+    return (new Function("list", "return function(a,b,c,d,e,f,g){" + code + "};"))(list);
+};
+},{}],3:[function(require,module,exports){
+"use strict";
 var compile = require('./compiler');
 var Validator = require('./v4validator');
 var Normalizer = require('./normalizer');
+var interpolate = require('./interpolate');
 
 module.exports = {
     Validator: Validator,
@@ -478,10 +515,14 @@ module.exports = {
     },
     newNormalizer: function (schema) {
         return compile(schema, Normalizer.factory);
+    },
+
+    inline: function (template, a, b, c, d, e, f, g) {
+        return {inline: interpolate(template)(a, b, c, d, e, f, g) };
     }
 };
 
-},{"./compiler":1,"./normalizer":4,"./v4validator":5}],3:[function(require,module,exports){
+},{"./compiler":1,"./interpolate":2,"./normalizer":5,"./v4validator":6}],4:[function(require,module,exports){
 "use strict";
 
 module.exports = function messages(gettext) {
@@ -520,7 +561,7 @@ module.exports = function messages(gettext) {
     };
 }
 
-},{}],4:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 "use strict";
 
 function Normalizer() {
@@ -565,14 +606,14 @@ Normalizer.prototype = {
                 break;
         }
     },
-    done: {inline: "return _"}
+    end: {inline: "return _"}
 };
 
 Normalizer.factory = function() {
     return new Normalizer();
 };
 module.exports = Normalizer;
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 "use strict";
 var messages = require('./messages');
 
@@ -615,8 +656,8 @@ function V4Validator(options) {
     if (!this.options.messages) {
         this.options.messages = messages(this.options.gettext);
     }
-    this.custom = this.options.custom || {};
-    this.formats = this.options.formats || {};
+    this.options.custom = this.custom = this.options.custom || {};
+    this.options.formats = this.formats = this.options.formats || {};
     fillDefaultFormats(this.formats);
     this.errors = [];
     this.res = {
@@ -932,7 +973,7 @@ V4Validator.prototype = {
             for (var k in schema.conform) {
                 if (schema.conform.hasOwnProperty(k)) {
                     var fn = this.custom[k];
-                    var args = schema.conform[k].map(JSON.stringify).concat([""]).join(',');
+                    var args = schema.conform[k] === true ? "" : schema.conform[k].map(JSON.stringify).concat([""]).join(',');
                     this.$custom.push(fn);
                     inlines.push("if (!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx)) this.error('custom." + k + "', ctx, this.options.messages.custom)");
                 }
@@ -943,26 +984,27 @@ V4Validator.prototype = {
 
     ///////////////// result
 
-    done: {inline: function () {
+    end: {inline: function () {
         this.res.valid = this.errors.length === 0;
         return this.res;
     }},
 
     clone: function () {
-        var v = new V4Validator(this.options);
+        var v = new this.constructor(this.options);
         v.$enums = this.$enums;
         v.$custom = this.$custom;
         v.$messages = this.$messages;
         return v;
     },
 
-    reset: function () {
+    begin: function () {
         this.errors = this.res.errors = [];
         this.res.valid = true;
         delete this.$cm;
     }
 
 };
+V4Validator.prototype.constructor = V4Validator;
 
 V4Validator.factory = function (options) {
     return function () {
@@ -970,7 +1012,28 @@ V4Validator.factory = function (options) {
     }
 };
 
+V4Validator.extend = function (override) {
+    function NewValidator (options) {
+        V4Validator.call(this, options);
+    }
+
+    NewValidator.prototype = new V4Validator();
+    NewValidator.prototype.constructor = NewValidator;
+    for (var k in override) {
+        if (override.hasOwnProperty(k)) {
+            NewValidator.prototype[k] = override[k];
+        }
+    }
+    NewValidator.factory = function (options) {
+        return function () {
+            return new NewValidator(options);
+        }
+    };
+
+    return NewValidator;
+};
+
 
 module.exports = V4Validator;
-},{"./messages":3}]},{},[2])(2)
+},{"./messages":4}]},{},[3])(3)
 });

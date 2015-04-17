@@ -626,4 +626,4 @@ Please refer to `examples` folder - it contains both versions and benchmark as w
 
 [See here](https://github.com/AlexeyGrishin/json-schema-benchmark)
 
-Actually schemasaurus is third one by speed, it 5x times slower than winner [is-my-json-valid](https://github.com/mafintosh/is-my-json-valid). But speed is not the main advantage of schemasaurus.
+Actually schemasaurus is third one by speed, it 4x times slower than winner [is-my-json-valid](https://github.com/mafintosh/is-my-json-valid). But speed is not the main advantage of schemasaurus.
