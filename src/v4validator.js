@@ -40,8 +40,8 @@ function V4Validator(options) {
     if (!this.options.messages) {
         this.options.messages = messages(this.options.gettext);
     }
-    this.custom = this.options.custom || {};
-    this.formats = this.options.formats || {};
+    this.options.custom = this.custom = this.options.custom || {};
+    this.options.formats = this.formats = this.options.formats || {};
     fillDefaultFormats(this.formats);
     this.errors = [];
     this.res = {

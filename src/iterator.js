@@ -2,6 +2,7 @@
 var compile = require('./compiler');
 var Validator = require('./v4validator');
 var Normalizer = require('./normalizer');
+var interpolate = require('./interpolate');
 
 module.exports = {
     Validator: Validator,
@@ -15,5 +16,9 @@ module.exports = {
     },
     newNormalizer: function (schema) {
         return compile(schema, Normalizer.factory);
+    },
+
+    inline: function (template, a, b, c, d, e, f, g) {
+        return {inline: interpolate(template)(a, b, c, d, e, f, g) };
     }
 };

@@ -561,8 +561,69 @@ To use schema somehow you need to add precompiling function:
    }
 ```
 
-TBD
+Here is the code of forms generator optimize for inline:
+
+```javascript
+FormGenerator.prototype = {
+    path: function (ctx) {
+        return ctx.path[0] + ctx.path.slice(1).map(function (p) { return p == "[]" ? p : "[" + p + "]" }).join("");
+    },
+
+    "[type=array]:start": {inline: 'this.html += "<fieldset>"; '},
+
+    "[type=array]:end": {inline: 'this.html += "</fieldset>"; '},
+
+    ":item": {inline: 'this.html += "<div id=\'" + this.path(ctx) + "\'>"'},
+
+    ":item-end": {inline: 'this.html += "<button onclick=\'document.getElementById(\" + this.path(ctx) + \").remove();\'>Delete</button></div>"'},
+
+    "[enum]": function (schema, ctx) {
+        var lines = [];
+        lines.push("this.html += \"<select name='" + this.path(ctx) + "'>\"\n");
+        schema.enum.forEach(function (v) {
+            lines.push("this.html += \"<option value='" + v + "' \" + (_ === " + JSON.stringify(v) + " ? 'selected' : '') + \">" + v + "</options>\"\n")
+        });
+        lines.push("this.html += \"</select>\"\n");
+        lines.push("ctx.stop();");
+        return {inline: lines.join("\n")};
+    },
+    "[enum]:end": {inline: function (_, ctx) {
+        ctx.stop();
+    }},
+
+    "[type=string]": {inline: "this.html += '<input type=string name=\"' + this.path(ctx) + '\" value= \"' + _ + '\"'"},
+
+    "[required]": {inline: function (_, ctx) {
+        this.html += " required ";
+    }},
+    "[type=string]:end": {inline: function (_, ctx) {
+        this.html += ">\n";
+    }},
+
+    begin: function () {
+        this.html = "";
+    },
+
+    end: function () {
+        return this.html;
+    }
+}
+```
+
+The main improvement here is the `[enum]` selector inlining - instead of iterating over constant `enum` values on each call we iterate them once
+and put `<option>` tags into the code.
+
+The benchmark shows that new version is ~ 2x times faster:
+
+```
+non-compiled x 32,120 ops/sec ±0.20% (99 runs sampled)
+compiled x 62,975 ops/sec ±0.80% (99 runs sampled)
+```
+
+Please refer to `examples` folder - it contains both versions and benchmark as well
 
 # Benchmark for validator
 
+[See here](https://github.com/AlexeyGrishin/json-schema-benchmark)
 
+Actually schemasaurus is third one by speed, it 5x times slower than winner [is-my-json-valid](https://github.com/mafintosh/is-my-json-valid). But speed is not the main advantage of schemasaurus.
