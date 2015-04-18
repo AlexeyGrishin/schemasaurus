@@ -16,9 +16,5 @@ module.exports = {
     },
     newNormalizer: function (schema) {
         return compile(schema, Normalizer.factory);
-    },
-
-    inline: function (template, a, b, c, d, e, f, g) {
-        return {inline: interpolate(template)(a, b, c, d, e, f, g) };
     }
 };

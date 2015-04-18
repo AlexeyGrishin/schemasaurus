@@ -1,56 +1,11 @@
 "use strict";
 
-function CurrentObject(path) {
-    this.path = path ? path.slice() : [];
-    this.stack = new Array(100);
-    this.si = 0;
-    this.parent = null;
-    this.property = null;
-    this.self = null;
-}
-
-CurrentObject.prototype = {
-    reset: function (path, self) {
-        this.path = path ? path.slice() : [];
-        this.self = self;
-    },
-    replace: function (newVal) {
-        this.parent[this.property] = newVal;
-    },
-    remove: function () {
-        delete this.parent[this.property];
-    },
-    push: function (prop, parent, self) {
-        this.path.push(prop);
-        this.stack[this.si] = [prop, parent, self];
-        this.si = this.si + 1;
-        this.property = prop;
-        this.parent = parent;
-        this.self = self;
-    },
-    stop: function () {
-        this.stopped = true;
-    },
-    isStopped: function () {
-        if (this.stopped) {
-            this.stopped = false;
-            return true;
-        }
-        return false;
-    },
-    pop: function () {
-        this.si = this.si - 1;
-        this.path.pop();
-        var last = this.stack[this.si];
-        if (last) {
-            this.parent = last[0];
-            this.property = last[1];
-            this.self = last[2];
-        }
-    }
-};
+var CurrentObject = require('./int/context');
 var Context = CurrentObject;
-
+var Generator = require('./int/gen');
+var Shared = require('./int/shared');
+var SchemaPartProcessor = require('./int/processor');
+var CodeComposer = require('./int/code');
 
 function defaultLoader() {
     throw new Error("Remote refs are not supported for now :(");
@@ -116,7 +71,7 @@ function parseValue(valAsStr) {
     return valAsStr;
 }
 
-function convertMatcher(expr, selector) {
+function convertMatcher(expr) {
     if (expr.indexOf(":") !== -1 || expr.indexOf("[") !== -1) {
         var ma = modRe.exec(expr), props = [], attr, not, i, match;
         if (ma) {
@@ -150,319 +105,215 @@ function convertMatcher(expr, selector) {
                 }
             }
             if (found) {
-                return cb(selector[expr], expr);
+                return cb(expr);
             }
         };
     }
 }
 
-function toFactory(ctor) {
-    if (Object.keys(ctor.prototype).length !== 0) {
-        return function () { return new ctor(); };
+function toFactory(Ctor) {
+    if (Object.keys(Ctor.prototype).length !== 0) {
+        return function () { return new Ctor(); };
     }
-    return ctor;
+    return Ctor;
 }
 
-function compile(userSchema, selectorCtor, options, path) {
+function SchemaPart(schema, varName, next) {
+    this.schema = schema;
+    this.varName = varName;
+    this.next = next;
+}
+
+
+function Compiler(userSchema, selectorCtor, options, path) {
     if (!selectorCtor || typeof selectorCtor !== 'function') {
         throw new Error("selectorCtor shall be a function");
     }
-    selectorCtor = toFactory(selectorCtor);
-    options = options || {};
-    options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false : options.ignoreAdditionalItems;
+    this.schemaRoot = userSchema;
+    this.selectorCtor = toFactory(selectorCtor);
+    this.options = options || {};
+    this.options.ignoreAdditionalItems = this.options.ignoreAdditionalItems === undefined ? false : this.options.ignoreAdditionalItems;
+    this.ctx = new Context(path);
+    this.codeComposer = new CodeComposer();
+    this.shared = new Shared();
+    this.gen = new Generator("var");
+    this.processor = new SchemaPartProcessor(this.gen, this.codeComposer, this.options);
 
-    var code = [],
-        schema = userSchema,
-        selector = selectorCtor(),
-        vars = [],
-        fnin,
-        fnout,
-        matchers,
-        labelCount = 0,
-        label,
-        schemas = [],
-        ctx = new Context(path),
-        schemaRoot = schema,
-        innerFns = [];
+    this.selector = this.selectorCtor();
+    this.prepareMatchers();
+    this.prepareContext();
 
-    function matchFns(schema, att, cb) {
-        var i, m, ma;
-        if (!matchers) {
-            matchers = [];
-            //noinspection JSLint
-            for (m in selector) {
-                //noinspection JSUnfilteredForInLoop
-                ma = convertMatcher(m, selector);
-                if (ma) {
-                    matchers.push(ma);
-                }
+}
+
+
+
+
+Compiler.prototype = {
+    code: function () {
+        this.codeComposer.code.apply(this.codeComposer, arguments);
+    },
+
+    subCompile: function (s, path) {
+        return new Compiler(s, this.selectorCtor, this.options, path).compile();
+    },
+
+    prepareContext: function () {
+        this.ctx.compile = function (subschema, newFnName) {
+            var ins;
+            if (Array.isArray(subschema)) {
+                this.ctx[newFnName] = subschema.map(function (s) {
+                    return this.subCompile(s);
+                }.bind(this));
+            } else {
+                this.ctx[newFnName] = this.subCompile(subschema, this.ctx.path.slice());
+            }
+            ins = this.shared.inner(this.ctx[newFnName]);
+            this.code("ctx.%% = %%", newFnName, ins);
+        }.bind(this);
+    },
+
+    prepareMatchers: function () {
+        var m, ma;
+        this.matchers = [];
+        //noinspection JSLint
+        for (m in this.selector) {
+            //noinspection JSUnfilteredForInLoop
+            ma = convertMatcher(m);
+            if (ma) {
+                this.matchers.push(ma);
             }
         }
-        for (i = 0; i < matchers.length; i = i + 1) {
-            matchers[i](schema, att, cb);
-        }
-    }
+    },
 
-    function createVar() {
-        var newvar = "i" + vars.length;
-        vars.push(newvar);
-        return newvar;
-    }
+    callback: function (schemaPart, attr) {
+        var i, self = this, clabel = this.gen.next(), matched = false;
+        this.code("%%: {", clabel);
 
-    function addFn(fn, name, varName, schema, stopLabel) {
-        var fnbody, k, useinner = false, allowReturn = !stopLabel;
-        if (fn.prepare || fn.length === 1 || fn.length === 2) {
-            fn = (fn.prepare || fn).call(selector, schema, ctx);
-            useinner = true;
+        function onMatch(name) {
+            matched = true;
+            self.addFn(name, schemaPart, clabel);
         }
-        if (!fn) {
+        for (i = 0; i < this.matchers.length; i++) {
+            this.matchers[i](schemaPart.schema, attr, onMatch);
+        }
+        if (!matched) {
+            this.codeComposer.pop();
+        } else {
+            this.code("}");
+        }
+    },
+
+    addFn: function (name, schemaPart, stopLabel) {
+        var fn = this.selector[name];
+        this.code("//call %%", name);
+        if (fn.prepare) {
+            this.addFn2(fn.prepare(schemaPart.schema, this.ctx), schemaPart, null, stopLabel);
+        } else if (fn.length === 1 || fn.length === 2) {
+            this.addFn2(fn.call(this.selector, schemaPart.schema, this.ctx), schemaPart, null, stopLabel);
+        } else {
+            this.addFn2(fn, schemaPart, name, stopLabel);
+        }
+    },
+
+    addFn2: function (fn, schemaPart, directCallName, stopLabel) {
+        if (fn === undefined || fn === null) {
             return;
         }
-
-        function addDirectCall(fn, schemaNr, dontUseInner) {
-            if (!dontUseInner) {
-                innerFns.push(fn);
-            }
-            var callBody = [];
-            if (allowReturn) {
-                callBody.push("return");
-            }
-            callBody.push(dontUseInner ? "this['" + name + "'](" : "innerFns[" + (innerFns.length - 1) + "].call(this,");
-            if (schemaNr !== undefined) {
-                callBody.push('schemas[' + schemaNr + '], ');
-            }
-            callBody.push(varName + ", ctx)");
-            code.push(callBody.join(" "));
-            if (stopLabel) {
-                code.push("if (ctx.isStopped()) break " + stopLabel);
-            }
-        }
-
-
-        code.push("//call " + name);
-        if (fn.inline) {
-
-            if (typeof fn.inline === 'function' && options.noinline) {
-                addDirectCall(fn.inline);
-            } else {
-                label = "label" + labelCount++;
-                fnbody = fn.inline.toString()
-                    .replace(/^function\s*\([^)]*\)/, "")
-                    .replace(/_/g, varName);
-
-                var needLabel = fnbody.indexOf('return') !== -1;
-                if (stopLabel) {
-                    fnbody = fnbody.replace(/ctx.stop\(\)/, "break " + stopLabel);
-                }
-                if (!allowReturn) {
-                    fnbody = fnbody.replace(/return/g, "break " + label);
-                }
-                for (k in fn) {
-                    if (fn.hasOwnProperty(k) && k !== 'inline') {
-                        fnbody = fnbody.replace(new RegExp(k, "g"), JSON.stringify(fn[k]));
-                    }
-                }
-                code = code.concat((needLabel ? (label + ":{" + fnbody + "}") : fnbody).split(/[\n\r]+/));
-            }
-        } else if (useinner) {
-            schemas.push(schema);
-            addDirectCall(fn, schemas.length - 1);
+        if (typeof fn.inline === 'function' && this.options.noinline) {
+            this.code("this['%%'].inline.call(this, %%, ctx)", directCallName, schemaPart.varName);
+        } else if (fn.inline) {
+            this.codeComposer.inline(fn.inline, schemaPart.varName, stopLabel);
+            return; //to skip checking stop
+        } else if (directCallName) {
+            this.code("this['%%'](%%, %%, ctx)", directCallName, this.shared.schema(schemaPart.schema), schemaPart.varName);
         } else {
-            schemas.push(schema);
-            addDirectCall(fn, schemas.length - 1, true);
+            this.code("%%.call(this, %%, %%, ctx)", this.shared.inner(fn), this.shared.schema(schemaPart.schema), schemaPart.varName);
         }
-    }
+        this.code("if (ctx.isStopped()) break %%", stopLabel);
+    },
 
-    ctx.compile = function (subschema, newFnName) {
-        if (Array.isArray(subschema)) {
-            innerFns.push(ctx[newFnName] = subschema.map(function (s) {
-                return compile(s, selectorCtor, options);
-            }));
-        } else {
-            innerFns.push(ctx[newFnName] = compile(subschema, selectorCtor, options, ctx.path.slice()));
-        }
-        code.push("ctx." + newFnName + " = innerFns[" + (innerFns.length - 1) + "]");
-    };
-
-    function step(schema, varName, opts) {
-        var i, k, perAttribute;
-        opts = opts || {};
-
-        function callback(attr) {
-            var noCodeAdded = code.length + 1, clabel = "label" + labelCount++;
-            code.push(clabel + ": {");
-            matchFns(schema, attr, function (s, name) {
-                addFn(s, name, varName, schema, clabel);
-            });
-            if (code.length === noCodeAdded) {
-                code.pop();
-            } else {
-                code.push("}");
-            }
-        }
-
-        function withOptions(schemaPath, path, attr) {
-            return {parent: varName, parentSchema: schema, schemaPath: schemaPath, path: path || JSON.stringify(schemaPath), attr: attr};
-        }
-        function processAdditional(schemaProp, cbProp, idxvar, newvar) {
-            var stubSchema = {};
-            stubSchema[cbProp] = false;
-            if (schema[schemaProp] === false) {
-                step(stubSchema, newvar, withOptions("*", idxvar));
-            } else if (typeof schema[schemaProp] === 'object') {
-                step(schema[schemaProp], newvar, withOptions("*", idxvar));
-            } else {
-                stubSchema[cbProp] = "allowed";
-                step(stubSchema, newvar, withOptions("*", idxvar));
-            }
-        }
-
-        function stepProperties() {
-            var propsVar, idxvar, newvar;
-            if (!options.ignoreAdditionalItems) {
-                propsVar = createVar();
-                code.push(propsVar + " = {}");
-            }
-            for (k in schema.properties) {
-                if (schema.properties.hasOwnProperty(k)) {
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + " ? " + varName + "." + k + " : undefined");
-                    if (!options.ignoreAdditionalItems) {
-                        code.push(propsVar + "." + k + " = true");
-                    }
-                    step(schema.properties[k], newvar, withOptions(k));
-                }
-            }
-            if (!options.ignoreAdditionalItems) {
-                idxvar = createVar();
-                code.push("if (typeof " + varName + " === 'object' && !Array.isArray(" + varName + ")) for (" + idxvar + " in " + varName + ") if (" + varName + ".hasOwnProperty(" + idxvar + ")) {");
-                newvar = createVar();
-                code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                for (k in (schema.patternProperties || {})) {
-                    if (schema.patternProperties.hasOwnProperty(k)) {
-                        code.push("if (/" + k + "/.test(" + idxvar + ")) {");
-                        step(schema.patternProperties[k], newvar, withOptions(k, idxvar));
-                        code.push(propsVar + "[" + idxvar + "] = true");
-                        code.push("}");
-                    }
-                }
-                code.push("if (!" + propsVar + "[" + idxvar + "]) {");
-                processAdditional("additionalProperties", "additionalProperty", idxvar, newvar);
-                code.push("}");
-                code.push("}");
-            }
-        }
-
-        function stepItems() {
-            var idxvar, newvar;
-            if (!Array.isArray(schema.items)) {
-                idxvar = createVar();
-                code.push("for (" + idxvar + " = 0; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
-                newvar = createVar();
-                code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                step(schema.items, newvar, withOptions("[]", idxvar, "item"));
-                code.push("}");
-                if (!options.ignoreSchemaOnly) {
-                    code.push("if (schemaOnly) {");
-                    step(schema.items, 'nil', withOptions("[]", null, "item"));
-                    code.push("}");
-                }
-            } else {
-                for (k = 0; k < schema.items.length; k = k + 1) {
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + " ? " + varName + "[" + k + "] : undefined");
-                    step(schema.items[k], newvar, withOptions(k));
-                }
-                if (!options.ignoreAdditionalItems) {
-                    idxvar = createVar();
-                    code.push("for (" + idxvar + " = " + schema.items.length + "; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                    processAdditional("additionalItems", "additionalItem", idxvar, newvar);
-                    code.push("}");
-                }
-            }
-        }
-
+    step: function (schema, varName, opts) {
         if (schema.$$visited) {
             //TODO: this is solution only for root recursion - to pass official suite :)
-            code.push("if (" + varName + " !== undefined) self(" + varName + ",ctx.path);");
+            this.code("if (%% !== undefined) self(%%,ctx.path);", varName, varName);
             return;
         }
         Object.defineProperty(schema, "$$visited", {value: true, enumerable: false, configurable: true});
-
         if (schema.$ref) {
-            step(resolveRef(options.loader || defaultLoader, schemaRoot, schema.$ref), varName, opts);
-            return;
+            return this.step(resolveRef(this.options.loader || defaultLoader, this.schemaRoot, schema.$ref), varName, opts);
         }
+        this.stepProcess(new SchemaPart(schema, varName, function (cldSchema, cldVarName, sProp, prop, attr) {
+            this.ctx.push(sProp, schema, cldSchema);
+            this.code("ctx.push(%%, %%, %%)", prop || JSON.stringify(sProp), varName, cldVarName);
+            this.step(cldSchema, cldVarName, {attr: attr});
+            this.ctx.pop();
+            this.code("ctx.pop()");
+        }.bind(this)), opts);
+        delete schema.$$visited;
 
-        if (opts.path) {
-            code.push("ctx.push(" + opts.path + ", " + opts.parent + "," + varName + ")");
-            ctx.push(opts.schemaPath, opts.parentSchema, schema);
-        }
+    },
 
-        ["oneOf", "anyOf", "allOf", "not"].forEach(function (inner) {
-            if (schema[inner]) {
-                ctx.compile(schema[inner], inner);
-            }
-        });
+    stepProcess: function (schemaPart, opts) {
+        var callback = this.callback.bind(this, schemaPart);
 
-        if (opts.attr) {
+        this.processAggregate(schemaPart.schema);
+
+        if (opts && opts.attr) {
             callback(opts.attr);
         }
         callback("start");
         callback();
 
-
-        perAttribute = [
-            ["properties", "additionalProperties", "patternProperties", stepProperties],
-            ["items", "additionalItems", stepItems]
-        ];
-        for (i = 0; i < perAttribute.length; i++) {
-            for (k = 0; k < perAttribute[i].length - 1; k++) {
-                if (schema[perAttribute[i][k]]) {
-                    perAttribute[i].pop()();
-                    break;
-                }
-            }
-        }
+        this.processor.execute(schemaPart);
 
         callback("end");
-        if (opts.attr) {
+        if (opts && opts.attr) {
             callback(opts.attr + "-end");
         }
-        if (opts.path) {
-            code.push("ctx.pop();");
-            ctx.pop();
+    },
+
+    processAggregate: function (schema) {
+        ["oneOf", "anyOf", "allOf", "not"].forEach(function (inner) {
+            if (schema[inner]) {
+                this.ctx.compile(schema[inner], inner);
+            }
+        }.bind(this));
+    },
+
+    addEnd: function () {
+        var end = this.selector.end;
+        if (end) {
+            if (end.inline && !this.options.noinline) {
+                this.codeComposer.inline(end.inline, "val", null, true);
+            } else {
+                this.codeComposer.code("return this.%%", end.inline ? "end.inline.call(this)" : "end()");
+            }
         }
-        delete schema.$$visited;
-    }
+    },
 
-    step(schema, "val");
-    if (selector.end) {
-        addFn(selector.end, "end", "val", schema, null, true);
+    compile: function () {
+        var fnbody, fnout;
+        this.step(this.schemaRoot, "val");
+        this.addEnd();
+        fnbody = prettifyCode(this.codeComposer.codeLines).map(function (line) {
+            return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
+        }).join("\n");
+        fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
+            .concat(this.gen.generated).join(",") + ";\nctx.reset(path, val);" +
+            fnbody + "}; self = function (val, path) {" + (this.selector.begin ? "selector.begin();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
+        try {
+            fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
+        } catch (e) {
+            console.error(fnbody);
+            throw e;
+        }
+        return fnout(this.selector, this.shared.schemas, this.shared.innerFns, new CurrentObject());
     }
+};
 
-    var fnbody = prettifyCode(code).map(function (line) {
-        return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
-    }).join("\n");
-    fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
-        .concat(vars).join(",") + ";\nctx.reset(path, val);" +
-            fnbody +
-            "}; self = function (val, path) {" + (selector.begin ? "selector.begin();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
-    try {
-        fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
-    } catch (e) {
-        console.error(fnbody);
-        throw e;
-    }
-    var co = new CurrentObject();
-    var so = (selector.clone ? selector.clone() : selectorCtor());
-    fnin = fnout(so, schemas, innerFns, co);
 
-    return fnin;
+function compile(userSchema, selectorCtor, options, path) {
+    return new Compiler(userSchema, selectorCtor, options, path).compile();
 }
-
-
 
 module.exports = compile;

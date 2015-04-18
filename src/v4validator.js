@@ -138,7 +138,7 @@ V4Validator.prototype = {
                     this.copyErrors(newErrs);
                 }
 
-            }
+            };
         }
     },
 
@@ -162,7 +162,7 @@ V4Validator.prototype = {
                 icode.push("}");
             }
         }
-        return {inline: icode.join("\n")}
+        return {inline: icode.join("\n")};
     },
 
     //////////////// combining
@@ -183,7 +183,9 @@ V4Validator.prototype = {
         for (var i = 0; i < ctx.anyOf.length; i++) {
             res = ctx.anyOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
-            if (res.valid) break;
+            if (res.valid) {
+                break;
+            }
         }
         if (!res.valid) {
             this.error("anyOf", ctx);
@@ -196,7 +198,9 @@ V4Validator.prototype = {
         for (var i = 0; i < ctx.oneOf.length; i++) {
             res = ctx.oneOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
-            if (res.valid) count++;
+            if (res.valid) {
+                count++;
+            }
         }
         if (count === 0) {
             this.error("oneOf.zero", ctx);
@@ -230,7 +234,7 @@ V4Validator.prototype = {
     //////////////// string
 
     "xLength": function (op, count, code) {
-        return {inline: "if (typeof _ === 'string' && _.length " + op + count + ") this.error('" + code + "', ctx, " + count + ")"}
+        return {inline: "if (typeof _ === 'string' && _.length " + op + count + ") this.error('" + code + "', ctx, " + count + ")"};
     },
 
     "[maxLength]": function (schema) {
@@ -240,14 +244,14 @@ V4Validator.prototype = {
         return this.xLength("<", schema.minLength, 'minLength');
     },
     "[pattern]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('pattern', ctx, " + JSON.stringify(schema.pattern) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('pattern', ctx, " + JSON.stringify(schema.pattern) + ")"};
     },
     "[format]": function (schema) {
         var fmt = this.formats[schema.format];
         if (!fmt) {
             throw new Error("Unknown format '" + schema.format + "'. Did you forget to register it?");
         }
-        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"};
     },
 
     ////////////////// array
@@ -259,7 +263,7 @@ V4Validator.prototype = {
     "xItems": function (op, count, code) {
         return {
             inline: "if(Array.isArray(_) && _.length " + op + count + ") this.error('" + code + "', ctx)"
-        }
+        };
     },
 
     "[minItems]": function (schema) {
@@ -288,7 +292,9 @@ V4Validator.prototype = {
     processRequired: function(reqs) {
         if (Array.isArray(reqs)) {
             return function (s, o, ctx) {
-                if (!isObject(o)) return;
+                if (!isObject(o)) {
+                    return;
+                }
                 var i;
                 for (i = 0; i < reqs.length; i++) {
                     if (!o.hasOwnProperty(reqs[i])) {
@@ -296,7 +302,7 @@ V4Validator.prototype = {
                     }
 
                 }
-            }
+            };
         }
     },
 
@@ -332,11 +338,11 @@ V4Validator.prototype = {
 
     ///////////////// number
     "[multipleOf]": function (schema) {
-        return {inline: "if (typeof _ === 'number' && (_ / " + schema.multipleOf + ") % 1 !== 0) this.error('multipleOf', ctx, " + schema.multipleOf + ")" }
+        return {inline: "if (typeof _ === 'number' && (_ / " + schema.multipleOf + ") % 1 !== 0) this.error('multipleOf', ctx, " + schema.multipleOf + ")" };
     },
 
     "ximum": function (op, excl, count, code) {
-        return {inline: "if (_ " + op +  (excl ? "=" : "") + count + ") this.error('" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"}
+        return {inline: "if (_ " + op +  (excl ? "=" : "") + count + ") this.error('" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"};
     },
     "[minimum]": function (schema) {
         return this.ximum("<", schema.exclusiveMinimum, schema.minimum, 'minimum');
@@ -346,11 +352,11 @@ V4Validator.prototype = {
     },
 
     ///////////////// custom
-    "[conform]": function (schema, ctx) {
+    "[conform]": function (schema) {
         this.$custom = this.$custom || [];
         if (typeof schema.conform === 'function') {
             this.$custom.push(schema.conform);
-            return {inline: "if (!this.$custom[" + (this.$custom.length - 1) + "](_, ctx)) this.error('custom', ctx)"}
+            return {inline: "if (!this.$custom[" + (this.$custom.length - 1) + "](_, ctx)) this.error('custom', ctx)"};
         }
         else {
             var inlines = [];
@@ -373,14 +379,6 @@ V4Validator.prototype = {
         return this.res;
     }},
 
-    clone: function () {
-        var v = new this.constructor(this.options);
-        v.$enums = this.$enums;
-        v.$custom = this.$custom;
-        v.$messages = this.$messages;
-        return v;
-    },
-
     begin: function () {
         this.errors = this.res.errors = [];
         this.res.valid = true;
@@ -393,7 +391,7 @@ V4Validator.prototype.constructor = V4Validator;
 V4Validator.factory = function (options) {
     return function () {
         return new V4Validator(options);
-    }
+    };
 };
 
 V4Validator.extend = function (override) {
@@ -411,7 +409,7 @@ V4Validator.extend = function (override) {
     NewValidator.factory = function (options) {
         return function () {
             return new NewValidator(options);
-        }
+        };
     };
 
     return NewValidator;

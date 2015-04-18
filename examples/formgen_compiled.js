@@ -1,6 +1,6 @@
 var s = require('../src/iterator');
 
-var inline = s.inline;
+var inline = function (s) { return {inline: s}; };
 
 function FormGenerator () {
 

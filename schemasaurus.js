@@ -1,57 +1,12 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.schemasaurus = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 "use strict";
 
-function CurrentObject(path) {
-    this.path = path ? path.slice() : [];
-    this.stack = new Array(100);
-    this.si = 0;
-    this.parent = null;
-    this.property = null;
-    this.self = null;
-}
-
-CurrentObject.prototype = {
-    reset: function (path, self) {
-        this.path = path ? path.slice() : [];
-        this.self = self;
-    },
-    replace: function (newVal) {
-        this.parent[this.property] = newVal;
-    },
-    remove: function () {
-        delete this.parent[this.property];
-    },
-    push: function (prop, parent, self) {
-        this.path.push(prop);
-        this.stack[this.si] = [prop, parent, self];
-        this.si = this.si + 1;
-        this.property = prop;
-        this.parent = parent;
-        this.self = self;
-    },
-    stop: function () {
-        this.stopped = true;
-    },
-    isStopped: function () {
-        if (this.stopped) {
-            this.stopped = false;
-            return true;
-        }
-        return false;
-    },
-    pop: function () {
-        this.si = this.si - 1;
-        this.path.pop();
-        var last = this.stack[this.si];
-        if (last) {
-            this.parent = last[0];
-            this.property = last[1];
-            this.self = last[2];
-        }
-    }
-};
+var CurrentObject = require('./int/context');
 var Context = CurrentObject;
-
+var Generator = require('./int/gen');
+var Shared = require('./int/shared');
+var SchemaPartProcessor = require('./int/processor');
+var CodeComposer = require('./int/code');
 
 function defaultLoader() {
     throw new Error("Remote refs are not supported for now :(");
@@ -117,7 +72,7 @@ function parseValue(valAsStr) {
     return valAsStr;
 }
 
-function convertMatcher(expr, selector) {
+function convertMatcher(expr) {
     if (expr.indexOf(":") !== -1 || expr.indexOf("[") !== -1) {
         var ma = modRe.exec(expr), props = [], attr, not, i, match;
         if (ma) {
@@ -151,352 +106,495 @@ function convertMatcher(expr, selector) {
                 }
             }
             if (found) {
-                return cb(selector[expr], expr);
+                return cb(expr);
             }
         };
     }
 }
 
-function toFactory(ctor) {
-    if (Object.keys(ctor.prototype).length !== 0) {
-        return function () { return new ctor(); };
+function toFactory(Ctor) {
+    if (Object.keys(Ctor.prototype).length !== 0) {
+        return function () { return new Ctor(); };
     }
-    return ctor;
+    return Ctor;
 }
 
-function compile(userSchema, selectorCtor, options, path) {
+function SchemaPart(schema, varName, next) {
+    this.schema = schema;
+    this.varName = varName;
+    this.next = next;
+}
+
+
+function Compiler(userSchema, selectorCtor, options, path) {
     if (!selectorCtor || typeof selectorCtor !== 'function') {
         throw new Error("selectorCtor shall be a function");
     }
-    selectorCtor = toFactory(selectorCtor);
-    options = options || {};
-    options.ignoreAdditionalItems = options.ignoreAdditionalItems === undefined ? false : options.ignoreAdditionalItems;
+    this.schemaRoot = userSchema;
+    this.selectorCtor = toFactory(selectorCtor);
+    this.options = options || {};
+    this.options.ignoreAdditionalItems = this.options.ignoreAdditionalItems === undefined ? false : this.options.ignoreAdditionalItems;
+    this.ctx = new Context(path);
+    this.codeComposer = new CodeComposer();
+    this.shared = new Shared();
+    this.gen = new Generator("var");
+    this.processor = new SchemaPartProcessor(this.gen, this.codeComposer, this.options);
 
-    var code = [],
-        schema = userSchema,
-        selector = selectorCtor(),
-        vars = [],
-        fnin,
-        fnout,
-        matchers,
-        labelCount = 0,
-        label,
-        schemas = [],
-        ctx = new Context(path),
-        schemaRoot = schema,
-        innerFns = [];
+    this.selector = this.selectorCtor();
+    this.prepareMatchers();
+    this.prepareContext();
 
-    function matchFns(schema, att, cb) {
-        var i, m, ma;
-        if (!matchers) {
-            matchers = [];
-            //noinspection JSLint
-            for (m in selector) {
-                //noinspection JSUnfilteredForInLoop
-                ma = convertMatcher(m, selector);
-                if (ma) {
-                    matchers.push(ma);
-                }
+}
+
+
+
+
+Compiler.prototype = {
+    code: function () {
+        this.codeComposer.code.apply(this.codeComposer, arguments);
+    },
+
+    subCompile: function (s, path) {
+        return new Compiler(s, this.selectorCtor, this.options, path).compile();
+    },
+
+    prepareContext: function () {
+        this.ctx.compile = function (subschema, newFnName) {
+            var ins;
+            if (Array.isArray(subschema)) {
+                this.ctx[newFnName] = subschema.map(function (s) {
+                    return this.subCompile(s);
+                }.bind(this));
+            } else {
+                this.ctx[newFnName] = this.subCompile(subschema, this.ctx.path.slice());
+            }
+            ins = this.shared.inner(this.ctx[newFnName]);
+            this.code("ctx.%% = %%", newFnName, ins);
+        }.bind(this);
+    },
+
+    prepareMatchers: function () {
+        var m, ma;
+        this.matchers = [];
+        //noinspection JSLint
+        for (m in this.selector) {
+            //noinspection JSUnfilteredForInLoop
+            ma = convertMatcher(m);
+            if (ma) {
+                this.matchers.push(ma);
             }
         }
-        for (i = 0; i < matchers.length; i = i + 1) {
-            matchers[i](schema, att, cb);
-        }
-    }
+    },
 
-    function createVar() {
-        var newvar = "i" + vars.length;
-        vars.push(newvar);
-        return newvar;
-    }
+    callback: function (schemaPart, attr) {
+        var i, self = this, clabel = this.gen.next(), matched = false;
+        this.code("%%: {", clabel);
 
-    function addFn(fn, name, varName, schema, stopLabel) {
-        var fnbody, k, useinner = false, allowReturn = !stopLabel;
-        if (fn.prepare || fn.length === 1 || fn.length === 2) {
-            fn = (fn.prepare || fn).call(selector, schema, ctx);
-            useinner = true;
+        function onMatch(name) {
+            matched = true;
+            self.addFn(name, schemaPart, clabel);
         }
-        if (!fn) {
+        for (i = 0; i < this.matchers.length; i++) {
+            this.matchers[i](schemaPart.schema, attr, onMatch);
+        }
+        if (!matched) {
+            this.codeComposer.pop();
+        } else {
+            this.code("}");
+        }
+    },
+
+    addFn: function (name, schemaPart, stopLabel) {
+        var fn = this.selector[name];
+        this.code("//call %%", name);
+        if (fn.prepare) {
+            this.addFn2(fn.prepare(schemaPart.schema, this.ctx), schemaPart, null, stopLabel);
+        } else if (fn.length === 1 || fn.length === 2) {
+            this.addFn2(fn.call(this.selector, schemaPart.schema, this.ctx), schemaPart, null, stopLabel);
+        } else {
+            this.addFn2(fn, schemaPart, name, stopLabel);
+        }
+    },
+
+    addFn2: function (fn, schemaPart, directCallName, stopLabel) {
+        if (fn === undefined || fn === null) {
             return;
         }
-
-        function addDirectCall(fn, schemaNr, dontUseInner) {
-            if (!dontUseInner) {
-                innerFns.push(fn);
-            }
-            var callBody = [];
-            if (allowReturn) {
-                callBody.push("return");
-            }
-            callBody.push(dontUseInner ? "this['" + name + "'](" : "innerFns[" + (innerFns.length - 1) + "].call(this,");
-            if (schemaNr !== undefined) {
-                callBody.push('schemas[' + schemaNr + '], ');
-            }
-            callBody.push(varName + ", ctx)");
-            code.push(callBody.join(" "));
-            if (stopLabel) {
-                code.push("if (ctx.isStopped()) break " + stopLabel);
-            }
-        }
-
-
-        code.push("//call " + name);
-        if (fn.inline) {
-
-            if (typeof fn.inline === 'function' && options.noinline) {
-                addDirectCall(fn.inline);
-            } else {
-                label = "label" + labelCount++;
-                fnbody = fn.inline.toString()
-                    .replace(/^function\s*\([^)]*\)/, "")
-                    .replace(/_/g, varName);
-
-                var needLabel = fnbody.indexOf('return') !== -1;
-                if (stopLabel) {
-                    fnbody = fnbody.replace(/ctx.stop\(\)/, "break " + stopLabel);
-                }
-                if (!allowReturn) {
-                    fnbody = fnbody.replace(/return/g, "break " + label);
-                }
-                for (k in fn) {
-                    if (fn.hasOwnProperty(k) && k !== 'inline') {
-                        fnbody = fnbody.replace(new RegExp(k, "g"), JSON.stringify(fn[k]));
-                    }
-                }
-                code = code.concat((needLabel ? (label + ":{" + fnbody + "}") : fnbody).split(/[\n\r]+/));
-            }
-        } else if (useinner) {
-            schemas.push(schema);
-            addDirectCall(fn, schemas.length - 1);
+        if (typeof fn.inline === 'function' && this.options.noinline) {
+            this.code("this['%%'].inline.call(this, %%, ctx)", directCallName, schemaPart.varName);
+        } else if (fn.inline) {
+            this.codeComposer.inline(fn.inline, schemaPart.varName, stopLabel);
+            return; //to skip checking stop
+        } else if (directCallName) {
+            this.code("this['%%'](%%, %%, ctx)", directCallName, this.shared.schema(schemaPart.schema), schemaPart.varName);
         } else {
-            schemas.push(schema);
-            addDirectCall(fn, schemas.length - 1, true);
+            this.code("%%.call(this, %%, %%, ctx)", this.shared.inner(fn), this.shared.schema(schemaPart.schema), schemaPart.varName);
         }
-    }
+        this.code("if (ctx.isStopped()) break %%", stopLabel);
+    },
 
-    ctx.compile = function (subschema, newFnName) {
-        if (Array.isArray(subschema)) {
-            innerFns.push(ctx[newFnName] = subschema.map(function (s) {
-                return compile(s, selectorCtor, options);
-            }));
-        } else {
-            innerFns.push(ctx[newFnName] = compile(subschema, selectorCtor, options, ctx.path.slice()));
-        }
-        code.push("ctx." + newFnName + " = innerFns[" + (innerFns.length - 1) + "]");
-    };
-
-    function step(schema, varName, opts) {
-        var i, k, perAttribute;
-        opts = opts || {};
-
-        function callback(attr) {
-            var noCodeAdded = code.length + 1, clabel = "label" + labelCount++;
-            code.push(clabel + ": {");
-            matchFns(schema, attr, function (s, name) {
-                addFn(s, name, varName, schema, clabel);
-            });
-            if (code.length === noCodeAdded) {
-                code.pop();
-            } else {
-                code.push("}");
-            }
-        }
-
-        function withOptions(schemaPath, path, attr) {
-            return {parent: varName, parentSchema: schema, schemaPath: schemaPath, path: path || JSON.stringify(schemaPath), attr: attr};
-        }
-        function processAdditional(schemaProp, cbProp, idxvar, newvar) {
-            var stubSchema = {};
-            stubSchema[cbProp] = false;
-            if (schema[schemaProp] === false) {
-                step(stubSchema, newvar, withOptions("*", idxvar));
-            } else if (typeof schema[schemaProp] === 'object') {
-                step(schema[schemaProp], newvar, withOptions("*", idxvar));
-            } else {
-                stubSchema[cbProp] = "allowed";
-                step(stubSchema, newvar, withOptions("*", idxvar));
-            }
-        }
-
-        function stepProperties() {
-            var propsVar, idxvar, newvar;
-            if (!options.ignoreAdditionalItems) {
-                propsVar = createVar();
-                code.push(propsVar + " = {}");
-            }
-            for (k in schema.properties) {
-                if (schema.properties.hasOwnProperty(k)) {
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + " ? " + varName + "." + k + " : undefined");
-                    if (!options.ignoreAdditionalItems) {
-                        code.push(propsVar + "." + k + " = true");
-                    }
-                    step(schema.properties[k], newvar, withOptions(k));
-                }
-            }
-            if (!options.ignoreAdditionalItems) {
-                idxvar = createVar();
-                code.push("if (typeof " + varName + " === 'object' && !Array.isArray(" + varName + ")) for (" + idxvar + " in " + varName + ") if (" + varName + ".hasOwnProperty(" + idxvar + ")) {");
-                newvar = createVar();
-                code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                for (k in (schema.patternProperties || {})) {
-                    if (schema.patternProperties.hasOwnProperty(k)) {
-                        code.push("if (/" + k + "/.test(" + idxvar + ")) {");
-                        step(schema.patternProperties[k], newvar, withOptions(k, idxvar));
-                        code.push(propsVar + "[" + idxvar + "] = true");
-                        code.push("}");
-                    }
-                }
-                code.push("if (!" + propsVar + "[" + idxvar + "]) {");
-                processAdditional("additionalProperties", "additionalProperty", idxvar, newvar);
-                code.push("}");
-                code.push("}");
-            }
-        }
-
-        function stepItems() {
-            var idxvar, newvar;
-            if (!Array.isArray(schema.items)) {
-                idxvar = createVar();
-                code.push("for (" + idxvar + " = 0; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
-                newvar = createVar();
-                code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                step(schema.items, newvar, withOptions("[]", idxvar, "item"));
-                code.push("}");
-                if (!options.ignoreSchemaOnly) {
-                    code.push("if (schemaOnly) {");
-                    step(schema.items, 'nil', withOptions("[]", null, "item"));
-                    code.push("}");
-                }
-            } else {
-                for (k = 0; k < schema.items.length; k = k + 1) {
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + " ? " + varName + "[" + k + "] : undefined");
-                    step(schema.items[k], newvar, withOptions(k));
-                }
-                if (!options.ignoreAdditionalItems) {
-                    idxvar = createVar();
-                    code.push("for (" + idxvar + " = " + schema.items.length + "; " + idxvar + " < (" + varName + " ? " + varName + ".length : 0); " + idxvar + "++) {");
-                    newvar = createVar();
-                    code.push(newvar + " = " + varName + "[" + idxvar + "]");
-                    processAdditional("additionalItems", "additionalItem", idxvar, newvar);
-                    code.push("}");
-                }
-            }
-        }
-
+    step: function (schema, varName, opts) {
         if (schema.$$visited) {
             //TODO: this is solution only for root recursion - to pass official suite :)
-            code.push("if (" + varName + " !== undefined) self(" + varName + ",ctx.path);");
+            this.code("if (%% !== undefined) self(%%,ctx.path);", varName, varName);
             return;
         }
         Object.defineProperty(schema, "$$visited", {value: true, enumerable: false, configurable: true});
-
         if (schema.$ref) {
-            step(resolveRef(options.loader || defaultLoader, schemaRoot, schema.$ref), varName, opts);
-            return;
+            return this.step(resolveRef(this.options.loader || defaultLoader, this.schemaRoot, schema.$ref), varName, opts);
         }
+        this.stepProcess(new SchemaPart(schema, varName, function (cldSchema, cldVarName, sProp, prop, attr) {
+            this.ctx.push(sProp, schema, cldSchema);
+            this.code("ctx.push(%%, %%, %%)", prop || JSON.stringify(sProp), varName, cldVarName);
+            this.step(cldSchema, cldVarName, {attr: attr});
+            this.ctx.pop();
+            this.code("ctx.pop()");
+        }.bind(this)), opts);
+        delete schema.$$visited;
 
-        if (opts.path) {
-            code.push("ctx.push(" + opts.path + ", " + opts.parent + "," + varName + ")");
-            ctx.push(opts.schemaPath, opts.parentSchema, schema);
-        }
+    },
 
-        ["oneOf", "anyOf", "allOf", "not"].forEach(function (inner) {
-            if (schema[inner]) {
-                ctx.compile(schema[inner], inner);
-            }
-        });
+    stepProcess: function (schemaPart, opts) {
+        var callback = this.callback.bind(this, schemaPart);
 
-        if (opts.attr) {
+        this.processAggregate(schemaPart.schema);
+
+        if (opts && opts.attr) {
             callback(opts.attr);
         }
         callback("start");
         callback();
 
-
-        perAttribute = [
-            ["properties", "additionalProperties", "patternProperties", stepProperties],
-            ["items", "additionalItems", stepItems]
-        ];
-        for (i = 0; i < perAttribute.length; i++) {
-            for (k = 0; k < perAttribute[i].length - 1; k++) {
-                if (schema[perAttribute[i][k]]) {
-                    perAttribute[i].pop()();
-                    break;
-                }
-            }
-        }
+        this.processor.execute(schemaPart);
 
         callback("end");
-        if (opts.attr) {
+        if (opts && opts.attr) {
             callback(opts.attr + "-end");
         }
-        if (opts.path) {
-            code.push("ctx.pop();");
-            ctx.pop();
+    },
+
+    processAggregate: function (schema) {
+        ["oneOf", "anyOf", "allOf", "not"].forEach(function (inner) {
+            if (schema[inner]) {
+                this.ctx.compile(schema[inner], inner);
+            }
+        }.bind(this));
+    },
+
+    addEnd: function () {
+        var end = this.selector.end;
+        if (end) {
+            if (end.inline && !this.options.noinline) {
+                this.codeComposer.inline(end.inline, "val", null, true);
+            } else {
+                this.codeComposer.code("return this.%%", end.inline ? "end.inline.call(this)" : "end()");
+            }
         }
-        delete schema.$$visited;
-    }
+    },
 
-    step(schema, "val");
-    if (selector.end) {
-        addFn(selector.end, "end", "val", schema, null, true);
+    compile: function () {
+        var fnbody, fnout;
+        this.step(this.schemaRoot, "val");
+        this.addEnd();
+        fnbody = prettifyCode(this.codeComposer.codeLines).map(function (line) {
+            return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
+        }).join("\n");
+        fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
+            .concat(this.gen.generated).join(",") + ";\nctx.reset(path, val);" +
+            fnbody + "}; self = function (val, path) {" + (this.selector.begin ? "selector.begin();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
+        try {
+            fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
+        } catch (e) {
+            console.error(fnbody);
+            throw e;
+        }
+        return fnout(this.selector, this.shared.schemas, this.shared.innerFns, new CurrentObject());
     }
+};
 
-    var fnbody = prettifyCode(code).map(function (line) {
-        return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
-    }).join("\n");
-    fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
-        .concat(vars).join(",") + ";\nctx.reset(path, val);" +
-            fnbody +
-            "}; self = function (val, path) {" + (selector.begin ? "selector.begin();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
-    try {
-        fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
-    } catch (e) {
-        console.error(fnbody);
-        throw e;
-    }
-    var co = new CurrentObject();
-    var so = (selector.clone ? selector.clone() : selectorCtor());
-    fnin = fnout(so, schemas, innerFns, co);
 
-    return fnin;
+function compile(userSchema, selectorCtor, options, path) {
+    return new Compiler(userSchema, selectorCtor, options, path).compile();
 }
-
-
 
 module.exports = compile;
 
-},{}],2:[function(require,module,exports){
+},{"./int/code":2,"./int/context":3,"./int/gen":4,"./int/processor":5,"./int/shared":6}],2:[function(require,module,exports){
 "use strict";
-module.exports = function interpolate(template, a, b, c, d, e, f, g) {
-    var list = template.split("%%"),
-        code;
-    if (a !== undefined) {
-        if (b === undefined) {
-            return list[0] + a + list[1];
+var Generator = require('./gen');
+var interpolate = require('../interpolate');
+
+function CodeComposer() {
+    this.codeLines = [];
+    this.labelgen = new Generator('clabel');
+}
+
+CodeComposer.prototype = {
+    pop: function () {
+        this.codeLines.pop();
+    },
+
+    code: function (template) {
+        this.codeLines.push(interpolate(template).apply(null, [].slice.call(arguments, 1)));
+    },
+
+    inline: function (fnInline, varName, stopLabel, allowReturn) {
+        var fnbody = fnInline.toString()
+                .replace(/^function\s*\([^)]*\)/, "")
+                .replace(/_/g, varName),
+            label = this.labelgen.next(),
+            needLabel = fnbody.indexOf('return') !== -1;
+        fnbody = fnbody.replace(/ctx\.stop\(\)/, "break " + stopLabel);
+        if (!allowReturn) {
+            fnbody = fnbody.replace(/return/g, "break " + label);
         }
-        if (c === undefined) {
-            return list[0] + a + list[1] + b + list[2];
-        }
-        if (d === undefined) {
-            return list[0] + a + list[1] + b + list[2] + c + list[3];
-        }
-        if (e === undefined) {
-            return list[0] + a + list[1] + b + list[2] + c + list[3] + d + list[4];
-        }
-        if (f === undefined) {
-            return list[0] + a + list[1] + b + list[2] + c + list[3] + d + list[4] + e + list[5];
-        }
-        if (g === undefined) {
-            return list[0] + a + list[1] + b + list[2] + c + list[3] + d + list[4] + e + list[5] + g + list[6];
+        if (needLabel) {
+            this.code("%%:{%%}", label, fnbody);
+        } else {
+            this.code(fnbody);
         }
     }
-    code = "return " + ["list[0]", "a", "list[1]", "b", "list[2]", "c", "list[3]", "d", "list[4]", "e", "list[5]", "f", "list[6]", "g", "list[7]"].slice(0, list.length * 2 - 1).join("+");
-    return (new Function("list", "return function(a,b,c,d,e,f,g){" + code + "};"))(list);
 };
-},{}],3:[function(require,module,exports){
+
+module.exports = CodeComposer;
+},{"../interpolate":7,"./gen":4}],3:[function(require,module,exports){
+"use strict";
+
+function CurrentObject(path) {
+    this.path = path ? path.slice() : [];
+    this.stack = new Array(100);
+    this.si = 0;
+    this.parent = null;
+    this.property = null;
+    this.self = null;
+}
+
+CurrentObject.prototype = {
+    reset: function (path, self) {
+        this.path = path ? path.slice() : [];
+        this.self = self;
+    },
+    replace: function (newVal) {
+        this.parent[this.property] = newVal;
+    },
+    remove: function () {
+        delete this.parent[this.property];
+    },
+    push: function (prop, parent, self) {
+        this.path.push(prop);
+        this.stack[this.si] = [prop, parent, self];
+        this.si = this.si + 1;
+        this.property = prop;
+        this.parent = parent;
+        this.self = self;
+    },
+    stop: function () {
+        this.stopped = true;
+    },
+    isStopped: function () {
+        if (this.stopped) {
+            this.stopped = false;
+            return true;
+        }
+        return false;
+    },
+    pop: function () {
+        this.si = this.si - 1;
+        this.path.pop();
+        var last = this.stack[this.si];
+        if (last) {
+            this.parent = last[0];
+            this.property = last[1];
+            this.self = last[2];
+        }
+    }
+};
+
+module.exports = CurrentObject;
+},{}],4:[function(require,module,exports){
+"use strict";
+
+function Generator(prefix) {
+    this.i = 0;
+    this.prefix = prefix;
+    this.generated = [];
+}
+
+Generator.prototype = {
+    next: function () {
+        this.i = this.i + 1;
+        var nv = this.prefix + this.i;
+        this.generated.push(nv);
+        return nv;
+    }
+};
+
+module.exports = Generator;
+},{}],5:[function(require,module,exports){
+"use strict";
+var Generator = require('./gen');
+
+function SchemaPartProcessor(vargen, codeComposer, options) {
+    this.vargen = vargen;
+    this.labelgen = new Generator('label');
+    this.codeComposer = codeComposer;
+    this.options = options;
+}
+
+
+SchemaPartProcessor.prototype = {
+
+    processors: ['processItems', 'processProperties'],
+
+    execute: function (step) {
+        this.processors.forEach(function (p) {
+            this[p](step);
+        }.bind(this));
+    },
+
+    createVar: function () {
+        return this.vargen.next();
+    },
+
+    code: function () {
+        this.codeComposer.code.apply(this.codeComposer, arguments);
+    }
+};
+
+SchemaPartProcessor.prototype.processItems = function (step) {
+    if (!step.schema.items && !step.schema.additionalItems) {
+        return;
+    }
+    var idxvar, newvar, k;
+    if (!Array.isArray(step.schema.items)) {
+        idxvar = this.createVar();
+        this.codeComposer.code("for (%% = 0; %%  < (%% ? %%.length : 0); %%++) {", idxvar, idxvar, step.varName, step.varName, idxvar);
+        newvar = this.createVar();
+        this.codeComposer.code("%% = %%[%%]", newvar, step.varName, idxvar);
+        step.next(step.schema.items, newvar, "[]", idxvar, "item");
+        this.code("}");
+        if (!this.options.ignoreSchemaOnly) {
+            this.code("if (schemaOnly) {");
+            step.next(step.schema.items, 'nil', "[]", undefined, "item");
+            this.code("}");
+        }
+    } else {
+        for (k = 0; k < step.schema.items.length; k = k + 1) {
+            newvar = this.createVar();
+            this.code("%% = %% ? %%[%%] : undefined", newvar, step.varName, step.varName, k);
+            step.next(step.schema.items[k], newvar, k);
+        }
+        if (!this.options.ignoreAdditionalItems) {
+            idxvar = this.createVar();
+            this.code("for (%% = %%; %% < (%% ? %%.length : 0); %%++) {", idxvar, step.schema.items.length, idxvar, step.varName, step.varName, idxvar);
+            newvar = this.createVar();
+            this.code("%% = %%[%%]", newvar, step.varName, idxvar);
+            this.processAdditional(step, "additionalItems", "additionalItem", idxvar, newvar);
+            this.code("}");
+        }
+    }
+
+};
+
+SchemaPartProcessor.prototype.processProperties = function (step) {
+    if (!step.schema.properties && !step.schema.additionalProperties && !step.schema.patternProperties) {
+        return;
+    }
+    var propsVar, newvar, k;
+    if (!this.options.ignoreAdditionalItems) {
+        propsVar = this.createVar();
+        this.code("%% = {}", propsVar);
+    }
+    for (k in step.schema.properties) {
+        if (step.schema.properties.hasOwnProperty(k)) {
+            newvar = this.createVar();
+            this.code("%% = %% ? %%.%% : undefined", newvar, step.varName, step.varName, k);
+            if (!this.options.ignoreAdditionalItems) {
+                this.code("%%.%% = true", propsVar, k);
+            }
+            step.next(step.schema.properties[k], newvar, k);
+        }
+    }
+    if (!this.options.ignoreAdditionalItems) {
+        this.processAdditionalProperties(step, propsVar);
+    }
+};
+
+SchemaPartProcessor.prototype.processAdditionalProperties = function (step, propsVar) {
+    var idxvar, newvar, k;
+    idxvar = this.createVar();
+    newvar = this.createVar();
+    this.code("if (typeof %% === 'object' && !Array.isArray(%%)) for (%% in %%) if (%%.hasOwnProperty(%%)) {",
+        step.varName, step.varName, idxvar, step.varName, step.varName, idxvar
+        );
+    this.code("%% = %%[%%]", newvar, step.varName, idxvar);
+    for (k in (step.schema.patternProperties || {})) {
+        if (step.schema.patternProperties.hasOwnProperty(k)) {
+            this.code("if (/%%/.test(%%)) {", k, idxvar);
+            step.next(step.schema.patternProperties[k], newvar, k, idxvar);
+            this.code("%%[%%] = true", propsVar, idxvar);
+            this.code("}");
+        }
+    }
+    this.code("if (!%%[%%]) {", propsVar, idxvar);
+    this.processAdditional(step, "additionalProperties", "additionalProperty", idxvar, newvar);
+    this.code("}");
+    this.code("}");
+};
+
+SchemaPartProcessor.prototype.processAdditional = function (step, schemaProp, cbProp, idxvar, newvar) {
+    var stubSchema = {};
+    stubSchema[cbProp] = false;
+    if (step.schema[schemaProp] === false) {
+        step.next(stubSchema, newvar, "*", idxvar);
+    } else if (typeof step.schema[schemaProp] === 'object') {
+        step.next(step.schema[schemaProp], newvar, "*", idxvar);
+    } else {
+        stubSchema[cbProp] = "allowed";
+        step.next(stubSchema, newvar, "*", idxvar);
+    }
+};
+
+
+module.exports = SchemaPartProcessor;
+},{"./gen":4}],6:[function(require,module,exports){
+"use strict";
+
+function Shared() {
+    this.innerFns = [];
+    this.schemas = [];
+}
+
+Shared.prototype = {
+    inner: function (fn) {
+        this.innerFns.push(fn);
+        return "innerFns[" + (this.innerFns.length - 1) + "]";
+    },
+    schema: function (s) {
+        this.schemas.push(s);
+        return "schemas[" + (this.schemas.length - 1) + "]";
+    }
+};
+
+module.exports = Shared;
+},{}],7:[function(require,module,exports){
+"use strict";
+
+var compiled = {};
+
+function interpolate(template) {
+    if (compiled[template]) {
+        return compiled[template];
+    }
+    var list = template.split("%%"),
+        code = "return " + ["list[0]", "a", "list[1]", "b", "list[2]", "c", "list[3]", "d", "list[4]", "e", "list[5]", "f", "list[6]", "g", "list[7]"].slice(0, list.length * 2 - 1).join("+"),
+        fn = (new Function("list", "return function(a,b,c,d,e,f,g){" + code + "};"))(list);
+    compiled[template] = fn;
+    return fn;
+}
+module.exports =  interpolate;
+
+},{}],8:[function(require,module,exports){
 "use strict";
 var compile = require('./compiler');
 var Validator = require('./v4validator');
@@ -515,14 +613,10 @@ module.exports = {
     },
     newNormalizer: function (schema) {
         return compile(schema, Normalizer.factory);
-    },
-
-    inline: function (template, a, b, c, d, e, f, g) {
-        return {inline: interpolate(template)(a, b, c, d, e, f, g) };
     }
 };
 
-},{"./compiler":1,"./interpolate":2,"./normalizer":5,"./v4validator":6}],4:[function(require,module,exports){
+},{"./compiler":1,"./interpolate":7,"./normalizer":10,"./v4validator":11}],9:[function(require,module,exports){
 "use strict";
 
 module.exports = function messages(gettext) {
@@ -561,7 +655,7 @@ module.exports = function messages(gettext) {
     };
 }
 
-},{}],5:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 "use strict";
 
 function Normalizer() {
@@ -613,7 +707,7 @@ Normalizer.factory = function() {
     return new Normalizer();
 };
 module.exports = Normalizer;
-},{}],6:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict";
 var messages = require('./messages');
 
@@ -754,7 +848,7 @@ V4Validator.prototype = {
                     this.copyErrors(newErrs);
                 }
 
-            }
+            };
         }
     },
 
@@ -778,7 +872,7 @@ V4Validator.prototype = {
                 icode.push("}");
             }
         }
-        return {inline: icode.join("\n")}
+        return {inline: icode.join("\n")};
     },
 
     //////////////// combining
@@ -799,7 +893,9 @@ V4Validator.prototype = {
         for (var i = 0; i < ctx.anyOf.length; i++) {
             res = ctx.anyOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
-            if (res.valid) break;
+            if (res.valid) {
+                break;
+            }
         }
         if (!res.valid) {
             this.error("anyOf", ctx);
@@ -812,7 +908,9 @@ V4Validator.prototype = {
         for (var i = 0; i < ctx.oneOf.length; i++) {
             res = ctx.oneOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
-            if (res.valid) count++;
+            if (res.valid) {
+                count++;
+            }
         }
         if (count === 0) {
             this.error("oneOf.zero", ctx);
@@ -846,7 +944,7 @@ V4Validator.prototype = {
     //////////////// string
 
     "xLength": function (op, count, code) {
-        return {inline: "if (typeof _ === 'string' && _.length " + op + count + ") this.error('" + code + "', ctx, " + count + ")"}
+        return {inline: "if (typeof _ === 'string' && _.length " + op + count + ") this.error('" + code + "', ctx, " + count + ")"};
     },
 
     "[maxLength]": function (schema) {
@@ -856,14 +954,14 @@ V4Validator.prototype = {
         return this.xLength("<", schema.minLength, 'minLength');
     },
     "[pattern]": function (schema) {
-        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('pattern', ctx, " + JSON.stringify(schema.pattern) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(/" + schema.pattern + "/)) this.error('pattern', ctx, " + JSON.stringify(schema.pattern) + ")"};
     },
     "[format]": function (schema) {
         var fmt = this.formats[schema.format];
         if (!fmt) {
             throw new Error("Unknown format '" + schema.format + "'. Did you forget to register it?");
         }
-        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"}
+        return {inline: "if (typeof _ === 'string' && !_.match(" + fmt.regexp + ")) this.error('format." + schema.format + "', ctx, " + JSON.stringify(fmt.message) + ")"};
     },
 
     ////////////////// array
@@ -875,7 +973,7 @@ V4Validator.prototype = {
     "xItems": function (op, count, code) {
         return {
             inline: "if(Array.isArray(_) && _.length " + op + count + ") this.error('" + code + "', ctx)"
-        }
+        };
     },
 
     "[minItems]": function (schema) {
@@ -904,7 +1002,9 @@ V4Validator.prototype = {
     processRequired: function(reqs) {
         if (Array.isArray(reqs)) {
             return function (s, o, ctx) {
-                if (!isObject(o)) return;
+                if (!isObject(o)) {
+                    return;
+                }
                 var i;
                 for (i = 0; i < reqs.length; i++) {
                     if (!o.hasOwnProperty(reqs[i])) {
@@ -912,7 +1012,7 @@ V4Validator.prototype = {
                     }
 
                 }
-            }
+            };
         }
     },
 
@@ -948,11 +1048,11 @@ V4Validator.prototype = {
 
     ///////////////// number
     "[multipleOf]": function (schema) {
-        return {inline: "if (typeof _ === 'number' && (_ / " + schema.multipleOf + ") % 1 !== 0) this.error('multipleOf', ctx, " + schema.multipleOf + ")" }
+        return {inline: "if (typeof _ === 'number' && (_ / " + schema.multipleOf + ") % 1 !== 0) this.error('multipleOf', ctx, " + schema.multipleOf + ")" };
     },
 
     "ximum": function (op, excl, count, code) {
-        return {inline: "if (_ " + op +  (excl ? "=" : "") + count + ") this.error('" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"}
+        return {inline: "if (_ " + op +  (excl ? "=" : "") + count + ") this.error('" + code + (excl ? ".exclusive" : "") + "', ctx, " + count + ")"};
     },
     "[minimum]": function (schema) {
         return this.ximum("<", schema.exclusiveMinimum, schema.minimum, 'minimum');
@@ -962,11 +1062,11 @@ V4Validator.prototype = {
     },
 
     ///////////////// custom
-    "[conform]": function (schema, ctx) {
+    "[conform]": function (schema) {
         this.$custom = this.$custom || [];
         if (typeof schema.conform === 'function') {
             this.$custom.push(schema.conform);
-            return {inline: "if (!this.$custom[" + (this.$custom.length - 1) + "](_, ctx)) this.error('custom', ctx)"}
+            return {inline: "if (!this.$custom[" + (this.$custom.length - 1) + "](_, ctx)) this.error('custom', ctx)"};
         }
         else {
             var inlines = [];
@@ -989,14 +1089,6 @@ V4Validator.prototype = {
         return this.res;
     }},
 
-    clone: function () {
-        var v = new this.constructor(this.options);
-        v.$enums = this.$enums;
-        v.$custom = this.$custom;
-        v.$messages = this.$messages;
-        return v;
-    },
-
     begin: function () {
         this.errors = this.res.errors = [];
         this.res.valid = true;
@@ -1009,7 +1101,7 @@ V4Validator.prototype.constructor = V4Validator;
 V4Validator.factory = function (options) {
     return function () {
         return new V4Validator(options);
-    }
+    };
 };
 
 V4Validator.extend = function (override) {
@@ -1027,7 +1119,7 @@ V4Validator.extend = function (override) {
     NewValidator.factory = function (options) {
         return function () {
             return new NewValidator(options);
-        }
+        };
     };
 
     return NewValidator;
@@ -1035,5 +1127,5 @@ V4Validator.extend = function (override) {
 
 
 module.exports = V4Validator;
-},{"./messages":4}]},{},[3])(3)
+},{"./messages":9}]},{},[8])(8)
 });
