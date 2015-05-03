@@ -1,6 +1,6 @@
 {
   "name": "schemasaurus",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "JSON schema iterator, validator, renderer, and so on",
   "main": "schemasaurus.js",
   "repository": "https://github.com/AlexeyGrishin/schemasaurus",

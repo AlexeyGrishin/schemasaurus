@@ -294,6 +294,19 @@ describe("validator", function() {
             s.validateMessage("5", FailWith(":/"));
             s.validateMessage(4, Ok);
         });
+        it("shall not mess user-specified messages from different nodes", function () {
+            var s = schema({
+                properties: {
+                    a: {minimum: 3, messages: {minimum: ":("}},
+                    b: {minimum: 3},
+                    c: {minimum: 3, messages: {minimum: ":["}}
+                }
+            });
+            s.validateMessage({a: 2, b: 2, c: 2}, FailWith(":(", "shall be >= %d", ":["));
+            s.validateMessage({a: 3, b: 2, c: 2}, FailWith("shall be >= %d", ":["));
+            s.validateMessage({a: 3, b: 3, c: 2}, FailWith(":["));
+            s.validateMessage({a: 2, b: 3, c: 2}, FailWith(":(", ":["));
+        });
         it("shall pass user-specified messages through gettext", function () {
             var s = schema({
                 type: "number",
