@@ -766,7 +766,7 @@ V4Validator.prototype = {
     },
     error: function (code, ctx, arg) {
         var msg = this.$cm ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
-        delete this.$cm;
+        this.$cm = undefined;
         this.errors.push({
             code: code,
             message: msg,
@@ -784,6 +784,8 @@ V4Validator.prototype = {
         this.$messages.push(s.messages);
         return {inline: "this.$cm = this.$messages[" + (this.$messages.length - 1) + "]"};
     },
+
+    "[messages]:end": {inline: "this.$cm = undefined;"},
 
     ////////////// type & common
 
