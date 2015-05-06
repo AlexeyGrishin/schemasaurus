@@ -52,7 +52,7 @@ function prettifyCode(codeLines) {
 }
 
 var attrRe = /(\[(\^?\w+)(=\w+)?\])/g;
-var modRe = /:([-\w]+)$/;
+var modRe = /:([\-\w]+)$/;
 
 function parseValue(valAsStr) {
     if (valAsStr === null) {

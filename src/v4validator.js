@@ -11,7 +11,7 @@ function fillDefaultFormats(formats) {
         message: "shall be valid email"
     };
     formats["date-time"] = formats["date-time"] || {
-        regexp: /^\d{4}-(?:0[0-9]{1}|1[0-2]{1})-[0-9]{2}[tT ]\d{2}:\d{2}:\d{2}(\.\d+)?([zZ]|[+-]\d{2}:\d{2})$/,
+        regexp: /^\d{4}-(?:0[0-9]{1}|1[0-2]{1})-[0-9]{2}[tT ]\d{2}:\d{2}:\d{2}(\.\d+)?([zZ]|[+\-]\d{2}:\d{2})$/,
         message: "shall be valid date"
     };
     formats.ipv4 = formats.ipv4 || {
@@ -124,14 +124,16 @@ V4Validator.prototype = {
     "[type]": function (schema) {
         if (Array.isArray(schema.type)) {
             var fns = [];
-            for (var i = 0; i < schema.type.length; i++) {
+            var i;
+            for (i = 0; i < schema.type.length; i++) {
                 fns.push(this["[type=" + schema.type[i] + "]"].inline);
             }
             return function (s, o, ctx) {
                 var old = this.errors;
                 var newErrs = [];
                 this.errors = newErrs;
-                for (var i = 0; i < fns.length; i++) {
+                var i;
+                for (i = 0; i < fns.length; i++) {
                     fns[i].call(this, o, ctx);
                 }
 
@@ -170,8 +172,9 @@ V4Validator.prototype = {
     //////////////// combining
 
     "[allOf]": {inline: function (_, ctx) {
-        for (var i = 0; i < ctx.allOf.length; i++) {
-            var res = ctx.allOf[i](_, ctx.path);
+        var i, res;
+        for (i = 0; i < ctx.allOf.length; i++) {
+            res = ctx.allOf[i](_, ctx.path);
 
             if (!res.valid) {
                 this.error("allOf", ctx);
@@ -181,8 +184,8 @@ V4Validator.prototype = {
     }},
 
     "[anyOf]": {inline: function (_, ctx) {
-        var allErrors = [], res;
-        for (var i = 0; i < ctx.anyOf.length; i++) {
+        var allErrors = [], res, i;
+        for (i = 0; i < ctx.anyOf.length; i++) {
             res = ctx.anyOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
             if (res.valid) {
@@ -196,8 +199,8 @@ V4Validator.prototype = {
     }},
 
     "[oneOf]": {inline: function (_, ctx) {
-        var count = 0, allErrors = [], res;
-        for (var i = 0; i < ctx.oneOf.length; i++) {
+        var count = 0, allErrors = [], res, i;
+        for (i = 0; i < ctx.oneOf.length; i++) {
             res = ctx.oneOf[i](_, ctx.path);
             allErrors = allErrors.concat(res.errors);
             if (res.valid) {
@@ -224,9 +227,9 @@ V4Validator.prototype = {
     ///////////////// enum
     "[enum]": function (schema) {
         this.$enums = this.$enums || [];
-        var $enum = {};
-        for (var i = 0; i < schema.enum.length; i++) {
-            var e = schema.enum[i];
+        var $enum = {}, i, e;
+        for (i = 0; i < schema.enum.length; i++) {
+            e = schema.enum[i];
             $enum[this.toComparable(e)] = 1;
         }
         this.$enums.push($enum);
@@ -360,18 +363,17 @@ V4Validator.prototype = {
             this.$custom.push(schema.conform);
             return {inline: "if (!this.$custom[" + (this.$custom.length - 1) + "](_, ctx)) this.error('custom', ctx)"};
         }
-        else {
-            var inlines = [];
-            for (var k in schema.conform) {
-                if (schema.conform.hasOwnProperty(k)) {
-                    var fn = this.custom[k];
-                    var args = schema.conform[k] === true ? "" : schema.conform[k].map(JSON.stringify).concat([""]).join(',');
-                    this.$custom.push(fn);
-                    inlines.push("if (!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx)) this.error('custom." + k + "', ctx, this.options.messages.custom)");
-                }
+        var inlines = [];
+        var k, fn, args;
+        for (k in schema.conform) {
+            if (schema.conform.hasOwnProperty(k)) {
+                fn = this.custom[k];
+                args = schema.conform[k] === true ? "" : schema.conform[k].map(JSON.stringify).concat([""]).join(',');
+                this.$custom.push(fn);
+                inlines.push("if (!this.$custom[" + (this.$custom.length - 1) + "](_, " + args + " ctx)) this.error('custom." + k + "', ctx, this.options.messages.custom)");
             }
-            return {inline: inlines.join('\n')};
         }
+        return {inline: inlines.join('\n')};
     },
 
     ///////////////// result
@@ -403,7 +405,8 @@ V4Validator.extend = function (override) {
 
     NewValidator.prototype = new V4Validator();
     NewValidator.prototype.constructor = NewValidator;
-    for (var k in override) {
+    var k;
+    for (k in override) {
         if (override.hasOwnProperty(k)) {
             NewValidator.prototype[k] = override[k];
         }
