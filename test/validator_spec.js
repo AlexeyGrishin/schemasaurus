@@ -132,6 +132,7 @@ describe("validator", function() {
             });
             it("shall check max length", function() {
                 schema({maxLength: 3})
+                    .validate("12a\u0301\u0302", Ok)
                     .validate("123", Ok)
                     .validate("12", Ok)
                     .validate("1234", FailWith("maxLength"))
