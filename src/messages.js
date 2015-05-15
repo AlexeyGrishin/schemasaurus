@@ -34,4 +34,4 @@ module.exports = function messages(gettext) {
         "anyOf": gettext("does not meet any requirement"),
         "custom": gettext("is not valid")
     };
-}
+};

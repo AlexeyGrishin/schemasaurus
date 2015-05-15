@@ -13,8 +13,8 @@ Normalizer.prototype = {
     "[additionalProperty]": function (schema, object, ctx) {
         ctx.remove();
     },
-    "[type]": function (schema, object, ctx, next) {
-        if (object === null || object === undefined) return;
+    "[type]": function (schema, object, ctx/*, next*/) {
+        if (object === null || object === undefined) {return;}
         switch (schema.type) {
             case 'null':
                 ctx.replace(null);
@@ -23,14 +23,14 @@ Normalizer.prototype = {
                 ctx.replace(object.toString());
                 break;
             case 'integer':
-                ctx.replace(parseInt(object));
+                ctx.replace(parseInt(object, 10));
                 break;
             case 'number':
                 ctx.replace(parseFloat(object));
                 break;
             case 'boolean':
-                var isTrue = ['true', 'on'].indexOf(object.toLowerCase()) != -1;
-                var isFalse = ['false', 'off'].indexOf(object.toLowerCase()) != -1;
+                var isTrue = ['true', 'on'].indexOf(object.toLowerCase()) !== -1;
+                var isFalse = ['false', 'off'].indexOf(object.toLowerCase()) !== -1;
                 ctx.replace(isTrue ? true: (isFalse ? false : !!object));
                 break;
             case 'array':
