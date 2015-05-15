@@ -1,0 +1,1 @@
+GraphemeBreaker = require('grapheme-breaker');
