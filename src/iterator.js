@@ -1,5 +1,5 @@
 "use strict";
-var compile = require('./compiler-gb');
+var compile = require('./compiler');
 var Validator = require('./v4validator');
 var Normalizer = require('./normalizer');
 var interpolate = require('./interpolate');

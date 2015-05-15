@@ -7,7 +7,7 @@
   "scripts": {
     "opencover": "istanbul cover node_modules/mocha/bin/_mocha && start coverage\\lcov-report\\index.html",
     "test": "istanbul cover ./node_modules/mocha/bin/_mocha --report lcovonly -- -R spec && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js && rm -rf ./coverage",
-    "build": "browserify src/GraphemeBreaker.js > src/GraphemeBreaker-browser.js && brfs src/compiler.js > src/compiler-gb.js && browserify src/iterator.js -s schemasaurus -o ./schemasaurus.js && uglifyjs ./schemasaurus.js -m > ./schemasaurus.min.js"
+    "build": "browserify src/iterator.js -s schemasaurus -o ./schemasaurus.js && uglifyjs ./schemasaurus.js -m > ./schemasaurus.min.js"
   },
   "keywords": [
     "json-schema",
