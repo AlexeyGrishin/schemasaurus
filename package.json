@@ -17,6 +17,8 @@
   "author": "Alexey Grishin",
   "license": "ISC",
   "devDependencies": {
+    "grapheme-breaker": "0.x",
+    "brfs": "1.x",
     "browserify": "*",
     "coveralls": "^2.11.2",
     "expect.js": "^0.3.1",

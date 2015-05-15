@@ -52,7 +52,7 @@ function prettifyCode(codeLines) {
 }
 
 var attrRe = /(\[(\^?\w+)(=\w+)?\])/g;
-var modRe = /:([-\w]+)$/;
+var modRe = /:([\-\w]+)$/;
 
 function parseValue(valAsStr) {
     if (valAsStr === null) {
@@ -302,12 +302,12 @@ Compiler.prototype = {
             .concat(this.gen.generated).join(",") + ";\nctx.reset(path, val);" +
             fnbody + "}; self = function (val, path) {" + (this.selector.begin ? "selector.begin();" : "") + " return selector._f(val, path) }; self.fn = selector._f; return self; ";
         try {
-            fnout = new Function("selector", "schemas", "innerFns", "ctx", fnbody);
+            fnout = new Function("selector", "schemas", "innerFns", "ctx", "GraphemeBreaker", fnbody);
         } catch (e) {
             console.error(fnbody);
             throw e;
         }
-        return fnout(this.selector, this.shared.schemas, this.shared.innerFns, new CurrentObject());
+        return fnout(this.selector, this.shared.schemas, this.shared.innerFns, new CurrentObject(), require('grapheme-breaker'));
     }
 };
 
