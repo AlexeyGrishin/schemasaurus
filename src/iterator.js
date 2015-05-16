@@ -2,7 +2,9 @@
 var compile = require('./compiler');
 var Validator = require('./v4validator');
 var Normalizer = require('./normalizer');
-var interpolate = require('./interpolate');
+var extend = require('./validator_extend');
+
+extend(Validator);
 
 module.exports = {
     Validator: Validator,

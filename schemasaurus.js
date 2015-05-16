@@ -7,110 +7,8 @@ var Generator = require('./int/gen');
 var Shared = require('./int/shared');
 var SchemaPartProcessor = require('./int/processor');
 var CodeComposer = require('./int/code');
-
-function defaultLoader() {
-    throw new Error("Remote refs are not supported for now :(");
-}
-
-function detilde(s) {
-    return s.replace(/~0/g, "~").replace(/~1/g, "/");   //do not know how to parse it other way
-}
-
-function resolveRef(loader, schemaNode, ref) {
-    var remLoc = decodeURI(ref).split("#"), rem = remLoc[0], loc = remLoc[1].split("/").map(detilde), st = schemaNode, i;
-    if (rem !== '') {
-        st = loader(rem);
-    }
-    for (i = 0; i < loc.length; i = i + 1) {
-        if (loc[i] === '') {
-            //noinspection JSLint
-            continue;
-        }
-        st = st[loc[i]];
-        if (st === undefined) {
-            throw new Error("Cannot find ref '" + ref + "' in schema");
-        }
-    }
-    return st;
-}
-
-function prettifyCode(codeLines) {
-    var offset = "", step = "  ", line, idx, openBrace, closeBrace;
-    for (idx = 0; idx < codeLines.length; idx = idx + 1) {
-        line = codeLines[idx].trim();
-        openBrace = line.indexOf("{") !== -1;
-        closeBrace = line.indexOf("}") !== -1;
-        if (closeBrace && !openBrace) {
-            offset = offset.substring(0, offset.length - step.length);
-        }
-        line = offset + line;
-        if (openBrace && !closeBrace) {
-            offset = offset + step;
-        }
-        codeLines[idx] = line;
-    }
-    return codeLines;
-}
-
-var attrRe = /(\[(\^?[\-_\w]+)(=[\-_\w]+)?\])/g;
-var modRe = /:([\-\w]+)$/;
-
-function parseValue(valAsStr) {
-    if (valAsStr === null) {
-        return null;
-    }
-    var val = parseFloat(valAsStr);
-    if (!isNaN(val)) {
-        return val;
-    }
-    if (valAsStr === "true") {
-        return true;
-    }
-    if (valAsStr === "false") {
-        return false;
-    }
-    return valAsStr;
-}
-
-function convertMatcher(expr) {
-    if (expr.indexOf(":") !== -1 || expr.indexOf("[") !== -1) {
-        var ma = modRe.exec(expr), props = [], attr, not, i, match;
-        if (ma) {
-            attr = ma[1];
-        }
-        ma = attrRe.exec(expr);
-        while (ma) {
-            not = ma[2][0] === '^';
-            props.push({
-                name: not ? ma[2].substring(1) : ma[2],
-                not: not,
-                value: ma[3] ? parseValue(ma[3].substring(1)) : undefined
-            });
-            ma = attrRe.exec(expr);
-        }
-        return function (schema, att, cb) {
-            var sv, found = true;
-            if (att !== attr) {
-                return false;
-            }
-            for (i = 0; i < props.length; i = i + 1) {
-                sv = schema[props[i].name];
-                if (props[i].not) {
-                    match = (sv === undefined || (sv !== props[i].value && props[i].value !== undefined));
-                } else {
-                    match = (sv !== undefined && (sv === props[i].value || props[i].value === undefined));
-                }
-                if (!match) {
-                    found = false;
-                    break;
-                }
-            }
-            if (found) {
-                return cb(expr);
-            }
-        };
-    }
-}
+var resolveRef = require('./int/references');
+var createMatcher = require('./int/matchers');
 
 function toFactory(Ctor) {
     if (Object.keys(Ctor.prototype).length !== 0) {
@@ -124,7 +22,6 @@ function SchemaPart(schema, varName, next) {
     this.varName = varName;
     this.next = next;
 }
-
 
 function Compiler(userSchema, selectorCtor, options, path) {
     if (!selectorCtor || typeof selectorCtor !== 'function') {
@@ -179,7 +76,7 @@ Compiler.prototype = {
         //noinspection JSLint
         for (m in this.selector) {
             //noinspection JSUnfilteredForInLoop
-            ma = convertMatcher(m);
+            ma = createMatcher(m);
             if (ma) {
                 this.matchers.push(ma);
             }
@@ -242,7 +139,7 @@ Compiler.prototype = {
         }
         Object.defineProperty(schema, "$$visited", {value: true, enumerable: false, configurable: true});
         if (schema.$ref) {
-            return this.step(resolveRef(this.options.loader || defaultLoader, this.schemaRoot, schema.$ref), varName, opts);
+            return this.step(resolveRef(this.options.loader, this.schemaRoot, schema.$ref), varName, opts);
         }
         this.stepProcess(new SchemaPart(schema, varName, function (cldSchema, cldVarName, sProp, prop, attr) {
             this.ctx.push(sProp, schema, cldSchema);
@@ -297,7 +194,7 @@ Compiler.prototype = {
         var fnbody, fnout;
         this.step(this.schemaRoot, "val");
         this.addEnd();
-        fnbody = prettifyCode(this.codeComposer.codeLines).map(function (line) {
+        fnbody = this.codeComposer.prettify().map(function (line) {
             return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
         }).join("\n");
         fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]
@@ -320,7 +217,7 @@ function compile(userSchema, selectorCtor, options, path) {
 
 module.exports = compile;
 
-},{"./int/code":2,"./int/context":3,"./int/gen":4,"./int/processor":5,"./int/shared":6}],2:[function(require,module,exports){
+},{"./int/code":2,"./int/context":3,"./int/gen":4,"./int/matchers":5,"./int/processor":6,"./int/references":7,"./int/shared":8}],2:[function(require,module,exports){
 "use strict";
 var Generator = require('./gen');
 var interpolate = require('../interpolate');
@@ -330,6 +227,25 @@ function CodeComposer() {
     this.labelgen = new Generator('clabel');
 }
 
+
+function prettifyCode(codeLines) {
+    var offset = "", step = "  ", line, idx, openBrace, closeBrace;
+    for (idx = 0; idx < codeLines.length; idx = idx + 1) {
+        line = codeLines[idx].trim();
+        openBrace = line.indexOf("{") !== -1;
+        closeBrace = line.indexOf("}") !== -1;
+        if (closeBrace && !openBrace) {
+            offset = offset.substring(0, offset.length - step.length);
+        }
+        line = offset + line;
+        if (openBrace && !closeBrace) {
+            offset = offset + step;
+        }
+        codeLines[idx] = line;
+    }
+    return codeLines;
+}
+
 CodeComposer.prototype = {
     pop: function () {
         this.codeLines.pop();
@@ -337,6 +253,10 @@ CodeComposer.prototype = {
 
     code: function (template) {
         this.codeLines.push(interpolate(template).apply(null, [].slice.call(arguments, 1)));
+    },
+
+    prettify: function () {
+        return prettifyCode(this.codeLines);
     },
 
     inline: function (fnInline, varName, stopLabel, allowReturn) {
@@ -358,7 +278,7 @@ CodeComposer.prototype = {
 };
 
 module.exports = CodeComposer;
-},{"../interpolate":7,"./gen":4}],3:[function(require,module,exports){
+},{"../interpolate":9,"./gen":4}],3:[function(require,module,exports){
 "use strict";
 
 function CurrentObject(path) {
@@ -441,6 +361,76 @@ Generator.prototype = {
 
 module.exports = Generator;
 },{}],5:[function(require,module,exports){
+"use strict";
+
+var attrRe = /(\[(\^?[\-_\w]+)(=[\-_\w]+)?\])/g;
+var modRe = /:([\-\w]+)$/;
+
+function parseValue(valAsStr) {
+    if (valAsStr === null) {
+        return null;
+    }
+    var val = parseFloat(valAsStr);
+    if (!isNaN(val)) {
+        return val;
+    }
+    if (valAsStr === "true") {
+        return true;
+    }
+    if (valAsStr === "false") {
+        return false;
+    }
+    return valAsStr;
+}
+
+function matchEq(value1, value2) {
+    return value1 !== undefined && (value1 === value2 || value2 === undefined);
+}
+
+function matchNotEq(value1, value2) {
+    return value1 === undefined || (value1 !== value2 && value2 !== undefined);
+}
+
+function createMatcher(expr) {
+    var ma = modRe.exec(expr), props = [], attr, not, i;
+    if (ma) {
+        attr = ma[1];
+    }
+    ma = attrRe.exec(expr);
+    while (ma) {
+        not = ma[2][0] === '^';
+        props.push({
+            name: not ? ma[2].substring(1) : ma[2],
+            matcher: not ? matchNotEq : matchEq,
+            value: ma[3] ? parseValue(ma[3].substring(1)) : undefined
+        });
+        ma = attrRe.exec(expr);
+    }
+    return function (schema, att, cb) {
+        var sv, found = true;
+        if (att !== attr) {
+            return false;
+        }
+        for (i = 0; i < props.length; i = i + 1) {
+            sv = schema[props[i].name];
+            if (!props[i].matcher(sv, props[i].value)) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return cb(expr);
+        }
+    };
+
+}
+
+module.exports = function (expr) {
+    if (expr.indexOf(":") !== -1 || expr.indexOf("[") !== -1) {
+        return createMatcher(expr);
+    }
+};
+},{}],6:[function(require,module,exports){
 "use strict";
 var Generator = require('./gen');
 
@@ -568,7 +558,37 @@ SchemaPartProcessor.prototype.processAdditional = function (step, schemaProp, cb
 
 
 module.exports = SchemaPartProcessor;
-},{"./gen":4}],6:[function(require,module,exports){
+},{"./gen":4}],7:[function(require,module,exports){
+"use strict";
+
+function defaultLoader() {
+    throw new Error("Remote refs are not supported for now :(");
+}
+
+function detilde(s) {
+    return s.replace(/~0/g, "~").replace(/~1/g, "/");   //do not know how to parse it other way
+}
+
+function resolveRef(loader, schemaNode, ref) {
+    var remLoc = decodeURI(ref).split("#"), rem = remLoc[0], loc = remLoc[1].split("/").map(detilde), st = schemaNode, i;
+    if (rem !== '') {
+        st = (loader || defaultLoader)(rem);
+    }
+    for (i = 0; i < loc.length; i = i + 1) {
+        if (loc[i] === '') {
+            //noinspection JSLint
+            continue;
+        }
+        st = st[loc[i]];
+        if (st === undefined) {
+            throw new Error("Cannot find ref '" + ref + "' in schema");
+        }
+    }
+    return st;
+}
+
+module.exports = resolveRef;
+},{}],8:[function(require,module,exports){
 "use strict";
 
 function Shared() {
@@ -588,7 +608,7 @@ Shared.prototype = {
 };
 
 module.exports = Shared;
-},{}],7:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 "use strict";
 
 var compiled = {};
@@ -605,12 +625,14 @@ function interpolate(template) {
 }
 module.exports =  interpolate;
 
-},{}],8:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 "use strict";
 var compile = require('./compiler');
 var Validator = require('./v4validator');
 var Normalizer = require('./normalizer');
-var interpolate = require('./interpolate');
+var extend = require('./validator_extend');
+
+extend(Validator);
 
 module.exports = {
     Validator: Validator,
@@ -627,7 +649,7 @@ module.exports = {
     }
 };
 
-},{"./compiler":1,"./interpolate":7,"./normalizer":10,"./v4validator":11}],9:[function(require,module,exports){
+},{"./compiler":1,"./normalizer":12,"./v4validator":13,"./validator_extend":14}],11:[function(require,module,exports){
 "use strict";
 
 module.exports = function messages(gettext) {
@@ -666,7 +688,7 @@ module.exports = function messages(gettext) {
     };
 };
 
-},{}],10:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 "use strict";
 
 function Normalizer() {
@@ -721,7 +743,7 @@ Normalizer.factory = function () {
     return new Normalizer();
 };
 module.exports = Normalizer;
-},{}],11:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 "use strict";
 var messages = require('./messages');
 
@@ -1121,29 +1143,36 @@ V4Validator.factory = function (options) {
     };
 };
 
-V4Validator.extend = function (override) {
-    function NewValidator(options) {
-        V4Validator.call(this, options);
-    }
+module.exports = V4Validator;
+},{"./messages":11}],14:[function(require,module,exports){
+"use strict";
+module.exports = function addExtender(ValidatorClass) {
 
-    NewValidator.prototype = new V4Validator();
-    NewValidator.prototype.constructor = NewValidator;
-    var k;
-    for (k in override) {
-        if (override.hasOwnProperty(k)) {
-            NewValidator.prototype[k] = override[k];
+    ValidatorClass.extend = function (override, ctor) {
+        function NewValidator(options) {
+            ValidatorClass.call(this, options);
+            if (ctor) {
+                ctor.call(this, options);
+            }
         }
-    }
-    NewValidator.factory = function (options) {
-        return function () {
-            return new NewValidator(options);
+
+        NewValidator.prototype = new ValidatorClass();
+        NewValidator.prototype.constructor = NewValidator;
+        var k;
+        for (k in override) {
+            if (override.hasOwnProperty(k)) {
+                NewValidator.prototype[k] = override[k];
+            }
+        }
+        NewValidator.factory = function (options) {
+            return function () {
+                return new NewValidator(options);
+            };
         };
+
+        return NewValidator;
     };
 
-    return NewValidator;
 };
-
-
-module.exports = V4Validator;
-},{"./messages":9}]},{},[8])(8)
+},{}]},{},[10])(10)
 });

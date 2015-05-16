@@ -397,27 +397,4 @@ V4Validator.factory = function (options) {
     };
 };
 
-V4Validator.extend = function (override) {
-    function NewValidator(options) {
-        V4Validator.call(this, options);
-    }
-
-    NewValidator.prototype = new V4Validator();
-    NewValidator.prototype.constructor = NewValidator;
-    var k;
-    for (k in override) {
-        if (override.hasOwnProperty(k)) {
-            NewValidator.prototype[k] = override[k];
-        }
-    }
-    NewValidator.factory = function (options) {
-        return function () {
-            return new NewValidator(options);
-        };
-    };
-
-    return NewValidator;
-};
-
-
 module.exports = V4Validator;

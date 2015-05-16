@@ -6,110 +6,8 @@ var Generator = require('./int/gen');
 var Shared = require('./int/shared');
 var SchemaPartProcessor = require('./int/processor');
 var CodeComposer = require('./int/code');
-
-function defaultLoader() {
-    throw new Error("Remote refs are not supported for now :(");
-}
-
-function detilde(s) {
-    return s.replace(/~0/g, "~").replace(/~1/g, "/");   //do not know how to parse it other way
-}
-
-function resolveRef(loader, schemaNode, ref) {
-    var remLoc = decodeURI(ref).split("#"), rem = remLoc[0], loc = remLoc[1].split("/").map(detilde), st = schemaNode, i;
-    if (rem !== '') {
-        st = loader(rem);
-    }
-    for (i = 0; i < loc.length; i = i + 1) {
-        if (loc[i] === '') {
-            //noinspection JSLint
-            continue;
-        }
-        st = st[loc[i]];
-        if (st === undefined) {
-            throw new Error("Cannot find ref '" + ref + "' in schema");
-        }
-    }
-    return st;
-}
-
-function prettifyCode(codeLines) {
-    var offset = "", step = "  ", line, idx, openBrace, closeBrace;
-    for (idx = 0; idx < codeLines.length; idx = idx + 1) {
-        line = codeLines[idx].trim();
-        openBrace = line.indexOf("{") !== -1;
-        closeBrace = line.indexOf("}") !== -1;
-        if (closeBrace && !openBrace) {
-            offset = offset.substring(0, offset.length - step.length);
-        }
-        line = offset + line;
-        if (openBrace && !closeBrace) {
-            offset = offset + step;
-        }
-        codeLines[idx] = line;
-    }
-    return codeLines;
-}
-
-var attrRe = /(\[(\^?[\-_\w]+)(=[\-_\w]+)?\])/g;
-var modRe = /:([\-\w]+)$/;
-
-function parseValue(valAsStr) {
-    if (valAsStr === null) {
-        return null;
-    }
-    var val = parseFloat(valAsStr);
-    if (!isNaN(val)) {
-        return val;
-    }
-    if (valAsStr === "true") {
-        return true;
-    }
-    if (valAsStr === "false") {
-        return false;
-    }
-    return valAsStr;
-}
-
-function convertMatcher(expr) {
-    if (expr.indexOf(":") !== -1 || expr.indexOf("[") !== -1) {
-        var ma = modRe.exec(expr), props = [], attr, not, i, match;
-        if (ma) {
-            attr = ma[1];
-        }
-        ma = attrRe.exec(expr);
-        while (ma) {
-            not = ma[2][0] === '^';
-            props.push({
-                name: not ? ma[2].substring(1) : ma[2],
-                not: not,
-                value: ma[3] ? parseValue(ma[3].substring(1)) : undefined
-            });
-            ma = attrRe.exec(expr);
-        }
-        return function (schema, att, cb) {
-            var sv, found = true;
-            if (att !== attr) {
-                return false;
-            }
-            for (i = 0; i < props.length; i = i + 1) {
-                sv = schema[props[i].name];
-                if (props[i].not) {
-                    match = (sv === undefined || (sv !== props[i].value && props[i].value !== undefined));
-                } else {
-                    match = (sv !== undefined && (sv === props[i].value || props[i].value === undefined));
-                }
-                if (!match) {
-                    found = false;
-                    break;
-                }
-            }
-            if (found) {
-                return cb(expr);
-            }
-        };
-    }
-}
+var resolveRef = require('./int/references');
+var createMatcher = require('./int/matchers');
 
 function toFactory(Ctor) {
     if (Object.keys(Ctor.prototype).length !== 0) {
@@ -123,7 +21,6 @@ function SchemaPart(schema, varName, next) {
     this.varName = varName;
     this.next = next;
 }
-
 
 function Compiler(userSchema, selectorCtor, options, path) {
     if (!selectorCtor || typeof selectorCtor !== 'function') {
@@ -178,7 +75,7 @@ Compiler.prototype = {
         //noinspection JSLint
         for (m in this.selector) {
             //noinspection JSUnfilteredForInLoop
-            ma = convertMatcher(m);
+            ma = createMatcher(m);
             if (ma) {
                 this.matchers.push(ma);
             }
@@ -241,7 +138,7 @@ Compiler.prototype = {
         }
         Object.defineProperty(schema, "$$visited", {value: true, enumerable: false, configurable: true});
         if (schema.$ref) {
-            return this.step(resolveRef(this.options.loader || defaultLoader, this.schemaRoot, schema.$ref), varName, opts);
+            return this.step(resolveRef(this.options.loader, this.schemaRoot, schema.$ref), varName, opts);
         }
         this.stepProcess(new SchemaPart(schema, varName, function (cldSchema, cldVarName, sProp, prop, attr) {
             this.ctx.push(sProp, schema, cldSchema);
@@ -296,7 +193,7 @@ Compiler.prototype = {
         var fnbody, fnout;
         this.step(this.schemaRoot, "val");
         this.addEnd();
-        fnbody = prettifyCode(this.codeComposer.codeLines).map(function (line) {
+        fnbody = this.codeComposer.prettify().map(function (line) {
             return "{};".indexOf(line[line.length - 1]) === -1 ? line + ";" : line;
         }).join("\n");
         fnbody = ["var self; selector._f = function(val, path) { var nil = undefined, schemaOnly = val === undefined"]

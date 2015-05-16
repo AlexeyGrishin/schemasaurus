@@ -1,5 +1,6 @@
 var expect = require('expect.js');
-var newValidator = require('../src/iterator').newValidator;
+var s = require('../src/iterator');
+var newValidator = s.newValidator;
 
 describe("validator", function() {
 
@@ -365,5 +366,33 @@ describe("validator", function() {
         });
 
 
+    });
+});
+
+describe('extend validator', function () {
+    var extendedValidator = s.Validator.extend({
+        "[minLength]": function (s, o, c) {
+            //ignore
+        },
+        "[fail]": function (s, o, c) {
+            this.error("fail", c);
+        }
+    }, function () {
+        this.options.messages.fail = "fail!";
+    });
+    var v = s.newIterator({
+        properties: {
+            a: {minLength: 3},
+            b: {fail: true}
+        }
+    }, extendedValidator);
+
+    it('shall override defaultr behavior', function () {
+        var res = v({a: '', b: 1});
+        res.errors = res.errors.map(function (e) { return e.message; });
+        expect(res).to.eql({
+            valid: false,
+            errors: ["fail!"]
+        })
     });
 });
