@@ -55,7 +55,7 @@ V4Validator.prototype = {
         return typeof o === 'object' ? JSON.stringify(o) : o;
     },
     error: function (code, ctx, arg, pathReplacement) {
-        var msg = this.$cm ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
+        var msg = (this.$cm && this.$cm[code]) ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
         this.$cm = undefined;
         this.errors.push({
             code: code,

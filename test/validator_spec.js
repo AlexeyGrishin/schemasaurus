@@ -327,6 +327,17 @@ describe("validator", function() {
             s.validateMessage("5", FailWith(":/"));
             s.validateMessage(4, Ok);
         });
+        it("shall return default messages for errors without user-specified messages", function() {
+            var s = schema({
+                minimum: 3,
+                maximum: 10,
+                messages: {
+                    minimum: ":("
+                }
+            });
+            s.validateMessage(2, FailWith(":("));
+            s.validateMessage(11, FailWith("shall be <= %d"));
+        });
         it("shall not mess user-specified messages from different nodes", function () {
             var s = schema({
                 properties: {
