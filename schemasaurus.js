@@ -52,8 +52,8 @@ function prettifyCode(codeLines) {
     return codeLines;
 }
 
-var attrRe = /(\[(\^?\w+)(=\w+)?\])/g;
-var modRe = /:([-\w]+)$/;
+var attrRe = /(\[(\^?[\-_\w]+)(=[\-_\w]+)?\])/g;
+var modRe = /:([\-\w]+)$/;
 
 function parseValue(valAsStr) {
     if (valAsStr === null) {
@@ -230,6 +230,7 @@ Compiler.prototype = {
         } else {
             this.code("%%.call(this, %%, %%, ctx)", this.shared.inner(fn), this.shared.schema(schemaPart.schema), schemaPart.varName);
         }
+        this.code("if (ctx.wasReplaced()) %% = ctx.replacement()", schemaPart.varName);
         this.code("if (ctx.isStopped()) break %%", stopLabel);
     },
 
@@ -376,6 +377,15 @@ CurrentObject.prototype = {
     },
     replace: function (newVal) {
         this.parent[this.property] = newVal;
+        this.replaced = true;
+    },
+    wasReplaced: function () {
+        var val = this.replaced;
+        this.replaced = false;
+        return val;
+    },
+    replacement: function () {
+        return this.parent[this.property];
     },
     remove: function () {
         delete this.parent[this.property];
@@ -764,15 +774,15 @@ V4Validator.prototype = {
     toComparable: function (o) {
         return typeof o === 'object' ? JSON.stringify(o) : o;
     },
-    error: function (code, ctx, arg) {
-        var msg = this.$cm ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
+    error: function (code, ctx, arg, pathReplacement) {
+        var msg = (this.$cm && this.$cm[code]) ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
         this.$cm = undefined;
         this.errors.push({
             code: code,
             message: msg,
             value: ctx.self,
             arg: arg,
-            path: ctx.path.slice()
+            path: pathReplacement || ctx.path.slice()
         });
     },
     copyErrors: function (anotherErrors) {
@@ -796,6 +806,7 @@ V4Validator.prototype = {
         }
         return {inline: "if (_ === undefined) ctx.stop()"};
     }},
+    "[required]": {inline: "if (_ === undefined) ctx.stop()"},
     "[type=string]": {inline: function (_, ctx) {
         if (typeof _ !== 'string') {
             this.error('string', ctx);
@@ -1010,7 +1021,7 @@ V4Validator.prototype = {
                 var i;
                 for (i = 0; i < reqs.length; i++) {
                     if (!o.hasOwnProperty(reqs[i])) {
-                        this.error("required", ctx, null, reqs[i]);
+                        this.error("required", ctx, null, ctx.path.slice().concat(reqs[i]));
                     }
 
                 }
