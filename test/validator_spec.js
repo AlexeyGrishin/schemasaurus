@@ -385,9 +385,9 @@ describe('extend validator', function () {
             a: {minLength: 3},
             b: {fail: true}
         }
-    }, extendedValidator);
+    }, extendedValidator, {noinline: true});
 
-    it('shall override defaultr behavior', function () {
+    it('shall override default behavior', function () {
         var res = v({a: '', b: 1});
         res.errors = res.errors.map(function (e) { return e.message; });
         expect(res).to.eql({
