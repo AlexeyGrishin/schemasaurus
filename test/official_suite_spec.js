@@ -1,6 +1,7 @@
 var fs = require('fs');
 var expect = require('expect.js');
 var path = require('path');
+var GraphemeBreaker = require('grapheme-breaker');
 
 var newValidator = require('../src/iterator').newValidator;
 var ignored = require('./ignored.json');
@@ -31,7 +32,9 @@ describe("Official json schema tests suite", function() {
     suite.forEach(function(s) {
         describe(s.description + " [" + s.file + "]", function() {
             if (isIgnored(s.description)) return console.warn("  [IGNORED] " + s.description + ": *");
-            var fn = newValidator(s.schema, {noinline:true});
+            var fn = newValidator(s.schema, {noinline:true, strLength: function (str) {
+                return GraphemeBreaker.countBreaks(str);
+            }});
             s.tests.forEach(function(t) {
                 if (isIgnored(t.description)) return console.warn("  [IGNORED] " + s.description + ": " + t.description);
                 it(t.description, function() {

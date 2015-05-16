@@ -22,6 +22,9 @@
     "expect.js": "^0.3.1",
     "istanbul": "^0.3.13",
     "mocha": "^2.2.1",
-    "uglify-js": "^2.4.19"
+    "uglify-js": "^2.4.19",
+    "grapheme-breaker": "^0.2.0"
+  },
+  "dependencies": {
   }
 }

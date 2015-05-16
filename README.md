@@ -260,7 +260,32 @@ console.log(v({username: "gandalf", password: "mellon"}));
 
 ```
 
-Please find the description of extension syntax below
+Please find the description of extension syntax below.
+
+### Unicode support
+
+Validator does not proceed correctly `minLength`/`maxLength` checks for unicode strings by default. If you'd like to you may use your favourite unicode parser to fix that, just pass `strLength` function to the validator on creation, for example:
+
+```javascript
+var s = require('./iterator');
+var GraphemeBreaker = require('grapheme-breaker');
+
+var strOfLength3 = "12a\u0301\u0302";
+var schemaForLength3 = {maxLength: 3};
+var notUnicodeValidator = s.newValidator(schemaForLength3);
+
+var unicodeValidator = s.newValidator(schemaForLength3, {
+    strLength: function (str) {
+        return GraphemeBreaker.countBreaks(str);
+    }
+});
+
+console.log(notUnicodeValidator(strOfLength3));
+// error
+console.log(unicodeValidator(strOfLength3));
+// no errors
+```
+`s.newValidator` accepts the options object as second parameter, where options are:
 
 
 # Normalizer usage

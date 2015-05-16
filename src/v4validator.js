@@ -32,6 +32,10 @@ function fillDefaultFormats(formats) {
     };
 }
 
+function nonUnicodeLength(str) {
+    return str.length;
+}
+
 function V4Validator(options) {
     this.options = options || {};
     if (!this.options.gettext) {
@@ -42,6 +46,7 @@ function V4Validator(options) {
     }
     this.options.custom = this.custom = this.options.custom || {};
     this.options.formats = this.formats = this.options.formats || {};
+    this.options.strLength = this.strLength = this.options.strLength || nonUnicodeLength;
     fillDefaultFormats(this.formats);
     this.errors = [];
     this.res = {
@@ -238,7 +243,7 @@ V4Validator.prototype = {
     //////////////// string
 
     "xLength": function (op, count, code) {
-        return {inline: "if (typeof _ === 'string' && _.length " + op + count + ") this.error('" + code + "', ctx, " + count + ")"};
+        return {inline: "if (typeof _ === 'string' && this.strLength(_) " + op + count + ") this.error('" + code + "', ctx, " + count + ")"};
     },
 
     "[maxLength]": function (schema) {
