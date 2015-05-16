@@ -51,8 +51,8 @@ function prettifyCode(codeLines) {
     return codeLines;
 }
 
-var attrRe = /(\[(\^?\w+)(=\w+)?\])/g;
-var modRe = /:([-\w]+)$/;
+var attrRe = /(\[(\^?[\-_\w]+)(=[\-_\w]+)?\])/g;
+var modRe = /:([\-\w]+)$/;
 
 function parseValue(valAsStr) {
     if (valAsStr === null) {

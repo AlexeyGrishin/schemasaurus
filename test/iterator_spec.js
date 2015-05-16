@@ -28,6 +28,15 @@ describe("iterator", function () {
         expect(compile({a: 1}, selector)()).to.eql("1");
         expect(compile({a: 2}, selector)()).to.eql("2");
     });
+    it("shall catch property with dash in value or name", function () {
+        var selector = factory({
+            "[a=o-1]": function () { this.called = 1; },
+            "[a-1=1]": function () { this.called = 2; },
+            end: function () { return this.called; }
+        });
+        expect(compile({a: "o-1"}, selector)()).to.eql(1);
+        expect(compile({"a-1": 1}, selector)()).to.eql(2);
+    });
 
     it("shall process property on any level", function () {
         var selector = factory({
