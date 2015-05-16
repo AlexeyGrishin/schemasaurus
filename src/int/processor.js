@@ -88,14 +88,14 @@ SchemaPartProcessor.prototype.processProperties = function (step) {
 };
 
 SchemaPartProcessor.prototype.processAdditionalProperties = function (step, propsVar) {
-    var idxvar, newvar, k;
+    var idxvar, newvar, k, patternProperties;
     idxvar = this.createVar();
     newvar = this.createVar();
     this.code("if (typeof %% === 'object' && !Array.isArray(%%)) for (%% in %%) if (%%.hasOwnProperty(%%)) {",
         step.varName, step.varName, idxvar, step.varName, step.varName, idxvar
         );
     this.code("%% = %%[%%]", newvar, step.varName, idxvar);
-    var patternProperties = step.schema.patternProperties || {};
+    patternProperties = step.schema.patternProperties || {};
     for (k in patternProperties) {
         if (patternProperties.hasOwnProperty(k)) {
             this.code("if (/%%/.test(%%)) {", k, idxvar);

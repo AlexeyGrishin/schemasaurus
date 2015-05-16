@@ -124,16 +124,14 @@ V4Validator.prototype = {
     }},
     "[type]": function (schema) {
         if (Array.isArray(schema.type)) {
-            var fns = [];
-            var i;
+            var fns = [], i;
             for (i = 0; i < schema.type.length; i++) {
                 fns.push(this["[type=" + schema.type[i] + "]"].inline);
             }
             return function (s, o, ctx) {
-                var old = this.errors;
-                var newErrs = [];
+                var old = this.errors,
+                    newErrs = [];
                 this.errors = newErrs;
-                var i;
                 for (i = 0; i < fns.length; i++) {
                     fns[i].call(this, o, ctx);
                 }
@@ -234,7 +232,7 @@ V4Validator.prototype = {
             $enum[this.toComparable(e)] = 1;
         }
         this.$enums.push($enum);
-        return {inline: "if(!this.$enums[" + (this.$enums.length-1) + "][this.toComparable(_)]) this.error('enum', ctx, " + JSON.stringify(schema.enum) + ")"};
+        return {inline: "if(!this.$enums[" + (this.$enums.length - 1) + "][this.toComparable(_)]) this.error('enum', ctx, " + JSON.stringify(schema.enum) + ")"};
     },
 
     //////////////// string
@@ -295,7 +293,7 @@ V4Validator.prototype = {
         }
     }},
 
-    processRequired: function(reqs) {
+    processRequired: function (reqs) {
         if (Array.isArray(reqs)) {
             return function (s, o, ctx) {
                 if (!isObject(o)) {
@@ -400,7 +398,7 @@ V4Validator.factory = function (options) {
 };
 
 V4Validator.extend = function (override) {
-    function NewValidator (options) {
+    function NewValidator(options) {
         V4Validator.call(this, options);
     }
 
