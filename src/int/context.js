@@ -16,6 +16,15 @@ CurrentObject.prototype = {
     },
     replace: function (newVal) {
         this.parent[this.property] = newVal;
+        this.replaced = true;
+    },
+    wasReplaced: function () {
+        var val = this.replaced;
+        this.replaced = false;
+        return val;
+    },
+    replacement: function () {
+        return this.parent[this.property];
     },
     remove: function () {
         delete this.parent[this.property];

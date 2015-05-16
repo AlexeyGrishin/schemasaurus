@@ -30,6 +30,19 @@ describe('normalizer', function () {
             ]
         });
     });
+    it("shall apply default values to nested structures", function () {
+        var n = newNormalizer({
+            properties: {
+                a: {
+                    default: {},
+                    properties: {
+                        b: {default: 3}
+                    }
+                }
+            }
+        });
+        expect(n({})).to.eql({a: {b: 3}});
+    });
     it("shall remove additional items", function () {
         var n = newNormalizer({
             properties: {

@@ -229,6 +229,7 @@ Compiler.prototype = {
         } else {
             this.code("%%.call(this, %%, %%, ctx)", this.shared.inner(fn), this.shared.schema(schemaPart.schema), schemaPart.varName);
         }
+        this.code("if (ctx.wasReplaced()) %% = ctx.replacement()", schemaPart.varName);
         this.code("if (ctx.isStopped()) break %%", stopLabel);
     },
 
