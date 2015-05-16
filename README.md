@@ -267,7 +267,7 @@ Please find the description of extension syntax below.
 Validator does not proceed correctly `minLength`/`maxLength` checks for unicode strings by default. If you'd like to you may use your favourite unicode parser to fix that, just pass `strLength` function to the validator on creation, for example:
 
 ```javascript
-var s = require('./iterator');
+var s = require('schemasaurus');
 var GraphemeBreaker = require('grapheme-breaker');
 
 var strOfLength3 = "12a\u0301\u0302";
