@@ -1,8 +1,8 @@
 {
   "name": "schemasaurus",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "JSON schema iterator, validator, renderer, and so on",
-  "main": "schemasaurus.js",
+  "main": "src/iterator.js",
   "repository": "https://github.com/AlexeyGrishin/schemasaurus",
   "scripts": {
     "opencover": "istanbul cover node_modules/mocha/bin/_mocha && start coverage\\lcov-report\\index.html",
