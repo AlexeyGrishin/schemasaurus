@@ -111,6 +111,39 @@ describe("validator", function() {
                 .validate(3, FailWith("maximum"))
         })
     });
+    describe("for required fields", function() {
+        it("shall provide valid path if required provided for field", function() {
+            schema({properties: {
+                a: {required: true}
+            }})
+                .validatePath({}, FailWith(["a"]))
+                .validatePath({a: 3}, Ok);
+        });
+        it("shall provide valid path if required provided for set of fields", function(){
+            schema({
+                properties: {
+                    a: {type: 'integer'},
+                    b: {type: 'integer'}
+                },
+                required: ['a','b']
+            })
+                .validatePath({}, FailWith(["a"], ["b"]))
+                .validatePath({a: 1}, FailWith(["b"]))
+                .validatePath({a: 1, b:2}, Ok)
+        });
+        it("shall provide valid path for combined case", function() {
+            schema({
+                properties: {
+                    a: {type: 'integer'},
+                    b: {type: 'integer', required: true}
+                },
+                required: ['a']
+            })
+                .validatePath({}, FailWith(["a"], ["b"]))
+                .validatePath({a: 1}, FailWith(["b"]))
+                .validatePath({a: 1, b:2}, Ok)
+        })
+    });
     describe("for strings", function() {
         describe("without format", function() {
             it("shall pass string values", function() {
