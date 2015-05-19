@@ -177,6 +177,18 @@ describe("validator", function() {
                     .validate("c1", FailWith("pattern"))
                     .validate("a3", FailWith("pattern"))
             });
+            it("shall use user-defined length function to check max length", function () {
+                function length3 () { return 3; }
+                schema({maxLength: 2}, {strLength: length3})
+                    .validate("12", FailWith("maxLength"))
+                    .validate("123", FailWith("maxLength"))
+            });
+            it("shall use user-defined length function to check min length", function () {
+                function length3 () { return 3; }
+                schema({minLength: 4}, {strLength: length3})
+                    .validate("1234", FailWith("minLength"))
+                    .validate("123", FailWith("minLength"))
+            });
         });
         describe("with email format", function() {
             it("shall pass emails", function() {
