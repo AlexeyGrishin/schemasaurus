@@ -11,7 +11,9 @@ function CurrentObject(path) {
 
 CurrentObject.prototype = {
     reset: function (path, self) {
-        this.path = path ? path.slice() : [];
+        if (path) {
+            this.path = path.slice();
+        }
         this.self = self;
     },
     replace: function (newVal) {

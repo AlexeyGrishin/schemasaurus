@@ -294,7 +294,9 @@ function CurrentObject(path) {
 
 CurrentObject.prototype = {
     reset: function (path, self) {
-        this.path = path ? path.slice() : [];
+        if (path) {
+            this.path = path.slice();
+        }
         this.self = self;
     },
     replace: function (newVal) {
@@ -820,13 +822,19 @@ function V4Validator(options) {
     };
 }
 
+function throwUnknownMessage(code) {
+    throw new Error("There is no message registered for error '" + code + "'");
+}
+
 V4Validator.prototype = {
     toComparable: function (o) {
         return typeof o === 'object' ? JSON.stringify(o) : o;
     },
     error: function (code, ctx, arg, pathReplacement) {
-        var msg = (this.$cm && this.$cm[code]) ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg || (function () {throw new Error("There is no message registered for error '" + code + "'"); }());
-        this.$cm = undefined;
+        var msg = (this.$cm && this.$cm[code]) ? this.options.gettext(this.$cm[code]) : this.options.messages[code] || arg;
+        if (!msg) {
+            return throwUnknownMessage(code);
+        }
         this.errors.push({
             code: code,
             message: msg,
@@ -1155,7 +1163,6 @@ V4Validator.prototype = {
     begin: function () {
         this.errors = this.res.errors = [];
         this.res.valid = true;
-        delete this.$cm;
     }
 
 };
