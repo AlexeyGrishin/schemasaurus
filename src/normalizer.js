@@ -32,8 +32,8 @@ Normalizer.prototype = {
             ctx.replace(parseFloat(object));
             break;
         case 'boolean':
-            isTrue = ['true', 'on'].indexOf(object.toLowerCase()) !== -1;
-            isFalse = ['false', 'off'].indexOf(object.toLowerCase()) !== -1;
+            isTrue = object === true || ['true', 'on'].indexOf(object.toString().toLowerCase()) !== -1;
+            isFalse = object === false || ['false', 'off'].indexOf(object.toString().toLowerCase()) !== -1;
             ctx.replace(isTrue ? true : (isFalse ? false : !!object));
             break;
         case 'array':
