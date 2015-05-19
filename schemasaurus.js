@@ -219,7 +219,7 @@ function compile(userSchema, selectorCtor, options, path) {
 
 module.exports = compile;
 
-},{"./int/code":2,"./int/context":3,"./int/gen":4,"./int/matchers":5,"./int/processor":6,"./int/references":7,"./int/shared":8}],2:[function(require,module,exports){
+},{"./int/code":2,"./int/context":3,"./int/gen":5,"./int/matchers":6,"./int/processor":7,"./int/references":8,"./int/shared":9}],2:[function(require,module,exports){
 "use strict";
 var Generator = require('./gen');
 var interpolate = require('../interpolate');
@@ -280,7 +280,7 @@ CodeComposer.prototype = {
 };
 
 module.exports = CodeComposer;
-},{"../interpolate":9,"./gen":4}],3:[function(require,module,exports){
+},{"../interpolate":10,"./gen":5}],3:[function(require,module,exports){
 "use strict";
 
 function CurrentObject(path) {
@@ -348,6 +348,35 @@ CurrentObject.prototype = {
 module.exports = CurrentObject;
 },{}],4:[function(require,module,exports){
 "use strict";
+module.exports = function fillDefaultFormats(formats) {
+    formats.email = formats.email || {
+        regexp: /^[^@]+@[^@]+$/,
+        message: "shall be valid email"
+    };
+    formats["date-time"] = formats["date-time"] || {
+        regexp: /^\d{4}-(?:0[0-9]{1}|1[0-2]{1})-[0-9]{2}[tT ]\d{2}:\d{2}:\d{2}(\.\d+)?([zZ]|[+\-]\d{2}:\d{2})$/,
+        message: "shall be valid date"
+    };
+    formats.ipv4 = formats.ipv4 || {
+        regexp: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
+        message: "shall be valid ipv4 address"
+    };
+    formats.ipv6 = formats.ipv6 || {
+        regexp: /^\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*$/,
+        message: "shall be valid ipv6 address"
+    };
+    formats.uri = formats.uri || {
+        regexp:  /^[a-zA-Z][a-zA-Z0-9+-.]*:[^\s]*$/,
+        message: "shall be valid URI"
+    };
+    formats.hostname = formats.hostname || {
+        regexp:  /^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$/,
+        message: "shall be valid host name"
+    };
+};
+
+},{}],5:[function(require,module,exports){
+"use strict";
 
 function Generator(prefix) {
     this.i = 0;
@@ -365,7 +394,7 @@ Generator.prototype = {
 };
 
 module.exports = Generator;
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 "use strict";
 
 var attrRe = /(\[(\^?[\-_\w]+)(=[\-_\w]+)?\])/g;
@@ -435,7 +464,7 @@ module.exports = function (expr) {
         return createMatcher(expr);
     }
 };
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 "use strict";
 var Generator = require('./gen');
 
@@ -563,7 +592,7 @@ SchemaPartProcessor.prototype.processAdditional = function (step, schemaProp, cb
 
 
 module.exports = SchemaPartProcessor;
-},{"./gen":4}],7:[function(require,module,exports){
+},{"./gen":5}],8:[function(require,module,exports){
 "use strict";
 
 function defaultLoader() {
@@ -593,7 +622,7 @@ function resolveRef(loader, schemaNode, ref) {
 }
 
 module.exports = resolveRef;
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 "use strict";
 
 function Shared() {
@@ -613,7 +642,7 @@ Shared.prototype = {
 };
 
 module.exports = Shared;
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 "use strict";
 
 var compiled = {};
@@ -630,7 +659,7 @@ function interpolate(template) {
 }
 module.exports =  interpolate;
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict";
 var compile = require('./compiler');
 var Validator = require('./v4validator');
@@ -656,7 +685,7 @@ module.exports = {
     }
 };
 
-},{"./compiler":1,"./normalizer":12,"./v4validator":13,"./validator_extend":14}],11:[function(require,module,exports){
+},{"./compiler":1,"./normalizer":13,"./v4validator":14,"./validator_extend":15}],12:[function(require,module,exports){
 "use strict";
 
 module.exports = function messages(gettext) {
@@ -695,7 +724,7 @@ module.exports = function messages(gettext) {
     };
 };
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 "use strict";
 
 function Normalizer() {
@@ -759,39 +788,13 @@ Normalizer.factory = function () {
     return new Normalizer();
 };
 module.exports = Normalizer;
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 "use strict";
 var messages = require('./messages');
+var fillDefaultFormats = require('./int/default_formats');
 
 function isObject(o) {
     return typeof o === 'object' && !Array.isArray(o) && o !== null;
-}
-
-function fillDefaultFormats(formats) {
-    formats.email = formats.email || {
-        regexp: /^[^@]+@[^@]+$/,
-        message: "shall be valid email"
-    };
-    formats["date-time"] = formats["date-time"] || {
-        regexp: /^\d{4}-(?:0[0-9]{1}|1[0-2]{1})-[0-9]{2}[tT ]\d{2}:\d{2}:\d{2}(\.\d+)?([zZ]|[+\-]\d{2}:\d{2})$/,
-        message: "shall be valid date"
-    };
-    formats.ipv4 = formats.ipv4 || {
-        regexp: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-        message: "shall be valid ipv4 address"
-    };
-    formats.ipv6 = formats.ipv6 || {
-        regexp: /^\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*$/,
-        message: "shall be valid ipv6 address"
-    };
-    formats.uri = formats.uri || {
-        regexp:  /^[a-zA-Z][a-zA-Z0-9+-.]*:[^\s]*$/,
-        message: "shall be valid URI"
-    };
-    formats.hostname = formats.hostname || {
-        regexp:  /^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$/,
-        message: "shall be valid host name"
-    };
 }
 
 function nonUnicodeLength(str) {
@@ -1165,7 +1168,7 @@ V4Validator.factory = function (options) {
 };
 
 module.exports = V4Validator;
-},{"./messages":11}],14:[function(require,module,exports){
+},{"./int/default_formats":4,"./messages":12}],15:[function(require,module,exports){
 "use strict";
 module.exports = function addExtender(ValidatorClass) {
 
@@ -1195,5 +1198,5 @@ module.exports = function addExtender(ValidatorClass) {
     };
 
 };
-},{}]},{},[10])(10)
+},{}]},{},[11])(11)
 });
