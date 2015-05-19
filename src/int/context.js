@@ -15,6 +15,9 @@ CurrentObject.prototype = {
         this.self = self;
     },
     replace: function (newVal) {
+        if (!this.parent) {
+            throw new Error("Cannot replace top-level object. Check in your iterator that `ctx.parent` is defined");
+        }
         this.parent[this.property] = newVal;
         this.replaced = true;
     },

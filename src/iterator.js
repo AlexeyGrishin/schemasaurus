@@ -14,6 +14,8 @@ module.exports = {
     newIterator: compile,
 
     newValidator: function (schema, voptions) {
+        voptions = voptions || {};
+        voptions.noreplace = true;
         return compile(schema, Validator.factory(voptions), voptions);
     },
     newNormalizer: function (schema) {

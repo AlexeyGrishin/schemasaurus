@@ -4,10 +4,19 @@ function Normalizer() {
 
 }
 
+function notDefined(o) {
+    return o === null || o === undefined;
+}
+
 Normalizer.prototype = {
     "[default]": function (schema, object, ctx) {
-        if (object === null || object === undefined) {
+        if (notDefined(object)) {
             ctx.replace(schema.default);
+        }
+    },
+    "[properties]": function (schema, object, ctx) {
+        if (ctx.parent && notDefined(object)) {
+            ctx.replace({});
         }
     },
     "[additionalProperty]": function (schema, object, ctx) {
@@ -15,7 +24,7 @@ Normalizer.prototype = {
     },
     "[type]": function (schema, object, ctx) {
         var isTrue, isFalse;
-        if (object === null || object === undefined) {
+        if (notDefined(object)) {
             return;
         }
         switch (schema.type) {

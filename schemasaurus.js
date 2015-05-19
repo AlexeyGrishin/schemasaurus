@@ -127,7 +127,9 @@ Compiler.prototype = {
         } else {
             this.code("%%.call(this, %%, %%, ctx)", this.shared.inner(fn), this.shared.schema(schemaPart.schema), schemaPart.varName);
         }
-        this.code("if (ctx.wasReplaced()) %% = ctx.replacement()", schemaPart.varName);
+        if (!this.options.noreplace) {
+            this.code("if (ctx.wasReplaced()) %% = ctx.replacement()", schemaPart.varName);
+        }
         this.code("if (ctx.isStopped()) break %%", stopLabel);
     },
 
@@ -296,6 +298,9 @@ CurrentObject.prototype = {
         this.self = self;
     },
     replace: function (newVal) {
+        if (!this.parent) {
+            throw new Error("Cannot replace top-level object. Check in your iterator that `ctx.parent` is defined");
+        }
         this.parent[this.property] = newVal;
         this.replaced = true;
     },
@@ -642,6 +647,8 @@ module.exports = {
     newIterator: compile,
 
     newValidator: function (schema, voptions) {
+        voptions = voptions || {};
+        voptions.noreplace = true;
         return compile(schema, Validator.factory(voptions), voptions);
     },
     newNormalizer: function (schema) {
@@ -695,10 +702,19 @@ function Normalizer() {
 
 }
 
+function notDefined(o) {
+    return o === null || o === undefined;
+}
+
 Normalizer.prototype = {
     "[default]": function (schema, object, ctx) {
-        if (object === null || object === undefined) {
+        if (notDefined(object)) {
             ctx.replace(schema.default);
+        }
+    },
+    "[properties]": function (schema, object, ctx) {
+        if (ctx.parent && notDefined(object)) {
+            ctx.replace({});
         }
     },
     "[additionalProperty]": function (schema, object, ctx) {
@@ -706,7 +722,7 @@ Normalizer.prototype = {
     },
     "[type]": function (schema, object, ctx) {
         var isTrue, isFalse;
-        if (object === null || object === undefined) {
+        if (notDefined(object)) {
             return;
         }
         switch (schema.type) {
