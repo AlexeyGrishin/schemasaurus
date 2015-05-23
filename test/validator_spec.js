@@ -11,8 +11,9 @@ describe("validator", function() {
 
     function validate(schema, value, exp, opts, whatToReturn) {
         opts = opts || {};
-        opts.noinline = true;
+        //opts.noinline = true;
         var it = newValidator(schema, opts);
+        console.log(it.fn.toString());
         var res = it(value);
         res.errors = res.errors.map(function(e) { return e[whatToReturn || 'code']; });
         expect({value: value, validationResult: res}).to.eql({value: value, validationResult: exp});
@@ -145,7 +146,7 @@ describe("validator", function() {
         it("shall provide valid path for combined case", function() {
             schema({
                 properties: {
-                    a: {type: 'integer'},
+                    a: {type: 'integer', required: false},
                     b: {type: 'integer', required: true}
                 },
                 required: ['a']
@@ -163,7 +164,7 @@ describe("validator", function() {
             })
                 .validatePath(["1", undefined], FailWith(["1"]))
                 .validatePath(["1", "2", null], FailWith(["2"]))
-        }) ;
+        });
     });
     describe("for strings", function() {
         describe("without format", function() {

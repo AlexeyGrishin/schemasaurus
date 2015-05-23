@@ -64,14 +64,20 @@ V4Validator.prototype = {
 
     ////////////// type & common
 
-
-    "[^required]": {prepare: function (s, ctx) {
+    processBoolRequired: function (s, ctx) {
         if (!ctx.parent) {
             return null;
         }
         return {inline: "if (_ === undefined) ctx.stop()"};
-    }},
-    "[required==true]": {inline: "if (_ === undefined) { this.error('required', ctx); ctx.stop(); }"},
+    },
+
+    "[^required]": function (schema, ctx) {
+        return this.processBoolRequired(schema, ctx);
+    },
+    "[required=false]": function (schema, ctx) {
+        return this.processBoolRequired(schema, ctx);
+    },
+    "[required=true]": {inline: "if (_ === undefined) { this.error('required', ctx); ctx.stop(); }"},
     "[type=string]": {inline: function (_, ctx) {
         if (typeof _ !== 'string') {
             this.error('string', ctx);
