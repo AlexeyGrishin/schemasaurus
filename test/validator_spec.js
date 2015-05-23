@@ -118,7 +118,17 @@ describe("validator", function() {
                 a: {required: true}
             }})
                 .validatePath({}, FailWith(["a"]))
+                .validatePath({a: undefined}, FailWith(["a"]))
+                .validatePath({a: null}, Ok)//type not specified, so null is valid value
                 .validatePath({a: 3}, Ok);
+        });
+        it("shall provide valid path if required provided for field with type", function() {
+            schema({properties: {
+                a: {required: true, type: "string"}
+            }})
+                .validatePath({a: undefined}, FailWith(["a"]))
+                .validatePath({a: null}, FailWith(["a"]))
+                .validatePath({a: "3"}, Ok);
         });
         it("shall provide valid path if required provided for set of fields", function(){
             schema({
@@ -135,7 +145,7 @@ describe("validator", function() {
         it("shall provide valid path for combined case", function() {
             schema({
                 properties: {
-                    a: {type: 'integer'},
+                    a: {type: 'integer', required: false},
                     b: {type: 'integer', required: true}
                 },
                 required: ['a']
@@ -143,7 +153,17 @@ describe("validator", function() {
                 .validatePath({}, FailWith(["a"], ["b"]))
                 .validatePath({a: 1}, FailWith(["b"]))
                 .validatePath({a: 1, b:2}, Ok)
-        })
+        });
+        it("shall provide path for array items", function() {
+            schema({
+                items: {
+                    required: true,
+                    type: "string"
+                }
+            })
+                .validatePath(["1", undefined], FailWith(["1"]))
+                .validatePath(["1", "2", null], FailWith(["2"]))
+        });
     });
     describe("for strings", function() {
         describe("without format", function() {
