@@ -864,7 +864,7 @@ V4Validator.prototype = {
         }
         return {inline: "if (_ === undefined) ctx.stop()"};
     }},
-    "[required]": {inline: "if (_ === undefined) ctx.stop()"},
+    "[required==true]": {inline: "if (_ === undefined) { this.error('required', ctx); ctx.stop(); }"},
     "[type=string]": {inline: function (_, ctx) {
         if (typeof _ !== 'string') {
             this.error('string', ctx);
@@ -1095,11 +1095,7 @@ V4Validator.prototype = {
     },
 
     "[properties]": function (schema) {
-        var $keys = Object.keys(schema.properties);
-        var reqs = (schema.required || []).concat($keys.filter(function (key) {
-            return schema.properties[key].required === true;
-        }));
-        return this.processRequired(reqs);
+        return this.processRequired(schema.required);
     },
 
     "xProperties": function (op, count, code) {
