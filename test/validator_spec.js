@@ -11,9 +11,8 @@ describe("validator", function() {
 
     function validate(schema, value, exp, opts, whatToReturn) {
         opts = opts || {};
-        //opts.noinline = true;
+        opts.noinline = true;
         var it = newValidator(schema, opts);
-        //console.log(it.fn.toString());
         var res = it(value);
         res.errors = res.errors.map(function(e) { return e[whatToReturn || 'code']; });
         expect({value: value, validationResult: res}).to.eql({value: value, validationResult: exp});
