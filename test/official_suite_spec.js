@@ -3,7 +3,7 @@ var expect = require('expect.js');
 var path = require('path');
 var GraphemeBreaker = require('grapheme-breaker');
 
-var newValidator = require('../src/iterator').newValidator;
+var newValidator = require('../schemasaurus.min.js').newValidator;
 var ignored = require('./ignored.json');
 
 function loadSuite(dir) {
@@ -32,7 +32,7 @@ describe("Official json schema tests suite", function() {
     suite.forEach(function(s) {
         describe(s.description + " [" + s.file + "]", function() {
             if (isIgnored(s.description)) return console.warn("  [IGNORED] " + s.description + ": *");
-            var fn = newValidator(s.schema, {noinline:true, strLength: function (str) {
+            var fn = newValidator(s.schema, {strLength: function (str) {
                 return GraphemeBreaker.countBreaks(str);
             }});
             s.tests.forEach(function(t) {

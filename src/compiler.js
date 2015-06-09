@@ -183,7 +183,7 @@ Compiler.prototype = {
     addEnd: function () {
         var end = this.selector.end;
         if (end) {
-            if (end.inline && !this.options.noinline) {
+            if (end.inline && (typeof end.inline === 'string' || !this.options.noinline)) {
                 this.codeComposer.inline(end.inline, "val", null, true);
             } else {
                 this.codeComposer.code("return this.%%", end.inline ? "end.inline.call(this)" : "end()");
