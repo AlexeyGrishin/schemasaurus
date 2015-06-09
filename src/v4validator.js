@@ -78,61 +78,24 @@ V4Validator.prototype = {
         return this.processBoolRequired(schema, ctx);
     },
     "[required=true]": {inline: "if (_ === undefined) { this.error('required', ctx); ctx.stop(); }"},
-    "[type=string]": {inline: function (_, ctx) {
-        if (typeof _ !== 'string') {
-            this.error('string', ctx);
-        }
-    }},
-    "[type=number]": {inline: function (_, ctx) {
-        if (typeof _ !== 'number') {
-            this.error('number', ctx);
-        }
-    }},
-    "[type=integer]": {inline: function (_, ctx) {
-        if ((typeof _ !== 'number') || (_ % 1 !== 0)) {
-            this.error('integer', ctx);
-        }
-    }},
-    "[type=null]": {inline: function (_, ctx) {
-        if (_ !== null) {
-            this.error('null', ctx);
-        }
-    }},
-    "[type=boolean]": {inline: function (_, ctx) {
-        if (typeof _ !== 'boolean') {
-            this.error('boolean', ctx);
-        }
-    }},
-    "[type=array]": {inline: function (_, ctx) {
-        if (!Array.isArray(_)) {
-            this.error('array', ctx);
-        }
-    }},
-    "[type=object]": {inline: function (_, ctx) {
-        if (Array.isArray(_) || typeof _ !== 'object' || _ === null) {
-            this.error('object', ctx);
-        }
-    }},
+    "[type=string]": {inline: "if (typeof _ !== 'string') this.error('string', ctx)"},
+    "[type=number]": {inline: "if (typeof _ !== 'number') this.error('number', ctx)"},
+    "[type=integer]": {inline: "if ((typeof _ !== 'number') || (_ % 1 !== 0)) this.error('integer', ctx)"},
+    "[type=null]": {inline: "if (_ !== null) this.error('null', ctx);"},
+    "[type=boolean]": {inline: "if (typeof _ !== 'boolean') this.error('boolean', ctx)"},
+    "[type=array]": {inline: "if (!Array.isArray(_)) this.error('array', ctx)"},
+    "[type=object]": {inline: "if (Array.isArray(_) || typeof _ !== 'object' || _ === null) this.error('object', ctx);"},
     "[type]": function (schema) {
         if (Array.isArray(schema.type)) {
             var fns = [], i;
             for (i = 0; i < schema.type.length; i++) {
                 fns.push(this["[type=" + schema.type[i] + "]"].inline);
             }
-            return function (s, o, ctx) {
-                var old = this.errors,
-                    newErrs = [];
-                this.errors = newErrs;
-                for (i = 0; i < fns.length; i++) {
-                    fns[i].call(this, o, ctx);
-                }
-
-                this.errors = old;
-                if (newErrs.length === fns.length) {
-                    this.copyErrors(newErrs);
-                }
-
-            };
+            return {inline: ["{var oldlength = this.errors.length, iferr = this.errors.length + " + fns.length]
+                .concat(fns)
+                .concat(['if (this.errors.length !== iferr) this.errors.splice(oldlength, iferr);}'])
+                .join(";")
+                };
         }
     },
 
@@ -161,7 +124,7 @@ V4Validator.prototype = {
 
     //////////////// combining
 
-    "[allOf]": {inline: function (_, ctx) {
+    "[allOf]": function (s, _, ctx) {
         var i, res;
         for (i = 0; i < ctx.allOf.length; i++) {
             res = ctx.allOf[i](_, ctx.path);
@@ -171,9 +134,9 @@ V4Validator.prototype = {
                 this.copyErrors(res.errors);
             }
         }
-    }},
+    },
 
-    "[anyOf]": {inline: function (_, ctx) {
+    "[anyOf]": function (s, _, ctx) {
         var allErrors = [], res, i;
         for (i = 0; i < ctx.anyOf.length; i++) {
             res = ctx.anyOf[i](_, ctx.path);
@@ -186,9 +149,9 @@ V4Validator.prototype = {
             this.error("anyOf", ctx);
             this.copyErrors(allErrors);
         }
-    }},
+    },
 
-    "[oneOf]": {inline: function (_, ctx) {
+    "[oneOf]": function (s, _, ctx) {
         var count = 0, allErrors = [], res, i;
         for (i = 0; i < ctx.oneOf.length; i++) {
             res = ctx.oneOf[i](_, ctx.path);
@@ -204,14 +167,14 @@ V4Validator.prototype = {
             this.error("oneOf", ctx);
         }
 
-    }},
+    },
 
-    "[not]": {inline: function (_, ctx) {
+    "[not]": function (s, _, ctx) {
         var res = ctx.not(_, ctx.path);
         if (res.valid) {
             this.error("not", ctx);
         }
-    }},
+    },
 
 
     ///////////////// enum
@@ -251,9 +214,7 @@ V4Validator.prototype = {
 
     ////////////////// array
 
-    "[additionalItem=false]": {inline: function (_, ctx) {
-        this.error("additionalItems", ctx);
-    }},
+    "[additionalItem=false]": {inline: "this.error('additionalItems', ctx);"},
 
     "xItems": function (op, count, code) {
         return {
@@ -269,7 +230,7 @@ V4Validator.prototype = {
         return this.xItems(">", schema.maxItems, "maxItems");
     },
 
-    "[uniqueItems]": {inline: function (_, ctx) {
+    "[uniqueItems]": function (s, _, ctx) {
         if (!Array.isArray(_)) {
             return;
         }
@@ -282,7 +243,7 @@ V4Validator.prototype = {
             }
             its[o] = true;
         }
-    }},
+    },
 
     processRequired: function (reqs) {
         if (Array.isArray(reqs)) {
@@ -323,9 +284,7 @@ V4Validator.prototype = {
         return this.xProperties("<", schema.minProperties, 'minProperties');
     },
 
-    "[additionalProperty=false]": {inline: function (_, ctx) {
-        this.error("additionalProperties", ctx);
-    }},
+    "[additionalProperty=false]": {inline: "this.error('additionalProperties', ctx)"},
 
     ///////////////// number
     "[multipleOf]": function (schema) {
@@ -364,10 +323,7 @@ V4Validator.prototype = {
 
     ///////////////// result
 
-    end: {inline: function () {
-        this.res.valid = this.errors.length === 0;
-        return this.res;
-    }},
+    end: {inline: "this.res.valid = this.errors.length === 0; return this.res;"},
 
     begin: function () {
         this.errors = this.res.errors = [];

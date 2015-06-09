@@ -1,5 +1,5 @@
 var expect = require('expect.js');
-var s = require('../src/iterator');
+var s = require('../schemasaurus.min.js');
 var newValidator = s.newValidator;
 
 describe("validator", function() {
@@ -11,7 +11,6 @@ describe("validator", function() {
 
     function validate(schema, value, exp, opts, whatToReturn) {
         opts = opts || {};
-        opts.noinline = true;
         var it = newValidator(schema, opts);
         var res = it(value);
         res.errors = res.errors.map(function(e) { return e[whatToReturn || 'code']; });
