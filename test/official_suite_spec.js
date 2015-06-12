@@ -3,7 +3,7 @@ var expect = require('expect.js');
 var path = require('path');
 var GraphemeBreaker = require('grapheme-breaker');
 
-var newValidator = require('../schemasaurus.min.js').newValidator;
+var newValidator = require('../src/iterator').newValidator;
 var ignored = require('./ignored.json');
 
 function loadSuite(dir) {

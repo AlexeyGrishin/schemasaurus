@@ -1,5 +1,5 @@
 var expect = require('expect.js');
-var s = require('../schemasaurus.min.js');
+var s = require('../src/iterator');
 var newValidator = s.newValidator;
 
 describe("validator", function() {
