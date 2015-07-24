@@ -6,7 +6,7 @@
 First of all Schemasaurus is an iterator over JSON according to JSON schema. For example:
 
 ```javascript
-var s = require('schemasaurus')
+var s = require('schemasaurus');
 
 var fn = s.compile({
   properties: {
@@ -25,7 +25,7 @@ var fn = s.compile({
     "[required]": function (schema, object, ctx) {
       console.log(" *required");
     }
-  }
+  };
 });
 fn({firstname: "frodo", lastname: "baggins", age: 33});
 // Output:
@@ -315,19 +315,19 @@ console.log(v({name: "Glorfindel", age: "1000", horse: "Asfaloth"}));
 
 It is easy enough - that is what schemasaurus was created for.
 
-Let's create simple form generator.
+Let's create a simple form generator.
 
 ### Prepare iterator
 
 ```javascript
-s = require('schemasaurus');
+var s = require('schemasaurus');
 
 function FormGenerator () {}
 FormGenerator.prototype = {
   end: function () {
     return "ok!"
   }
-}
+};
 
 var schema = {
   properties: {
@@ -345,7 +345,7 @@ var schema = {
       }
     }
   }
-}
+};
 
 var gen = s.newIterator(schema, FormGenerator);
 console.log(gen({}));
@@ -385,7 +385,7 @@ FormGenerator.prototype = {
     end: function () {
         return this.html;
     }
-}
+};
 ...
 
 console.log(gen({firstname: "frodo", lastname: "baggins", gender: "male"}));
@@ -490,7 +490,7 @@ First naive implementation would be the following:
 
 but if you start it you'll get the duplicated gender field:
 ```html
-<select  name='gender'>
+<select name='gender'>
   <option value='male' selected>male</option>
   <option value='female'>female</option>
 </select>
@@ -518,7 +518,7 @@ console.log(gen());
 ```html
 <input type='string' name='firstname'>
 <input type='string' name='lastname'>
-<select  name='gender'>
+<select name='gender'>
 <option value='male' >male</option>
 <option value='female' >female</option>
 </select>
@@ -606,7 +606,7 @@ FormGenerator.prototype = {
         var lines = [];
         lines.push("this.html += \"<select name='" + this.path(ctx) + "'>\"\n");
         schema.enum.forEach(function (v) {
-            lines.push("this.html += \"<option value='" + v + "' \" + (_ === " + JSON.stringify(v) + " ? 'selected' : '') + \">" + v + "</options>\"\n")
+            lines.push("this.html += \"<option value='" + v + "' \" + (_ === " + JSON.stringify(v) + " ? 'selected' : '') + \">" + v + "</options>\"\n");
         });
         lines.push("this.html += \"</select>\"\n");
         lines.push("ctx.stop();");
