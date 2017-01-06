@@ -544,9 +544,9 @@ SchemaPartProcessor.prototype.processProperties = function (step) {
     for (k in step.schema.properties) {
         if (step.schema.properties.hasOwnProperty(k)) {
             newvar = this.createVar();
-            this.code("%% = %% ? %%.%% : undefined", newvar, step.varName, step.varName, k);
+            this.code("%% = %% ? %%['%%'] : undefined", newvar, step.varName, step.varName, k);
             if (!this.options.ignoreAdditionalItems) {
-                this.code("%%.%% = true", propsVar, k);
+                this.code("%%['%%'] = true", propsVar, k);
             }
             step.next(step.schema.properties[k], newvar, k);
         }

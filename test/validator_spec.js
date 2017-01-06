@@ -65,6 +65,17 @@ describe("validator", function() {
         });
     });
 
+    describe("for object type", function() {
+        it("shall not die on types with dashes", function() {
+            schema({
+                type: 'object',
+                properties:{ "with-dash": {type: "boolean"} }
+            })
+                .validate({'with-dash': true}, Ok)
+                .validate({'with-dash': false}, Ok)
+        });
+    });
+    
     describe("for numeric types", function() {
         it("shall distinguish integer values", function() {
             schema({type: "integer"})
